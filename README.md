@@ -158,6 +158,22 @@ Gateway mock tests: PASS
 TESTING.md
 ```
 
+## 公网 Gateway（Render）
+
+仓库根目录的 `render.yaml` 可直接部署公开 HTTPS Gateway。飞书密钥只填写在 Render 服务端环境变量中，不提交到 GitHub。
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/TanRongbin/FortiorKnowledgeContributionSkills)
+
+部署时填写：
+
+- `FEISHU_APP_ID`
+- `FEISHU_APP_SECRET`
+- `FEISHU_APP_TOKEN`
+- `FEISHU_EXPERIENCE_TABLE_ID`
+- `FEISHU_REVIEW_POINT_TABLE_ID`
+
+部署完成后访问 `/health`，应返回 `sink=feishu`。把公网 Gateway 根地址配置到贡献者端的 `FORTIOR_CONTRIBUTION_ENDPOINT` 即可。
+
 ## 飞书
 
 `bootstrap_feishu.py` 会非破坏性创建/补齐：
