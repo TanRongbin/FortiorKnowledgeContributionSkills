@@ -15,10 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_DIR = ROOT / "skills" / "fortior-knowledge-contributor" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from common import feishu_tenant_access_token, http_json  # noqa: E402
+from common import feishu_tenant_access_token, http_json, load_config  # noqa: E402
 from submit import experience_fields, review_fields  # noqa: E402
 
-app = FastAPI(title="Fortior Contribution Gateway", version="0.2.0")
+app = FastAPI(title="Fortior Contribution Gateway", version="0.3.2")
 
 MAX_BYTES = int(os.environ.get("FORTIOR_GATEWAY_MAX_BYTES", str(128 * 1024)))
 RATE_PER_HOUR = int(os.environ.get("FORTIOR_GATEWAY_RATE_LIMIT_PER_HOUR", "30"))
@@ -38,7 +38,12 @@ DEDUPE_TTL = 24 * 3600
 
 
 def cfg() -> dict[str, str]:
-    return dict(os.environ)
+    """Load process env plus ~/.fortior/knowledge-contributor.env for local owner testing.
+
+    Environment variables still win over values from the local config file, so cloud
+    deployments can inject secrets normally without relying on a home-directory file.
+    """
+    return load_config()
 
 
 def canonical_hash(payload: dict) -> str:
