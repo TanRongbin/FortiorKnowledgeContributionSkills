@@ -1,14 +1,33 @@
 # Mandatory Pre-Submission Questionnaire
 
-Ask only unanswered items. Prefer **one compact grouped question** so the contributor normally answers everything in one round.
+Ask only unanswered items.
+
+## Interaction policy
+
+When the host Agent/CLI exposes a structured question facility such as `AskUserQuestion`, a choice picker, single-select, multi-select, or equivalent interactive form, **use it instead of ordinary prose for this questionnaire**.
+
+Do not print all choices as plain text and wait for the contributor to manually type answers when the host can present selectable options.
+
+Recommended control types:
+
+- `contributor.username`: free-text input, or a choice with `Other`/custom input if that is the host's supported pattern;
+- attribution: single-select;
+- contribution type when unclear: single-select;
+- visibility: single-select;
+- source disclosure: multi-select, or a compact equivalent that lets the user explicitly allow/deny repository, commit, paths and minimal code excerpts;
+- title keep/edit: single-select with custom/edit path;
+- rights/privacy: explicit confirmation choice.
+
+Prefer **one compact grouped structured interaction** so the contributor normally answers everything in one round. If the host cannot combine different control types in one interaction, use the smallest practical number of structured prompts.
+
+Only if no structured-question capability exists may the Agent fall back to one compact text prompt with clearly labeled choices.
 
 ## A. Contributor username + attribution — required
 
-Ask both together:
+Collect both together when the host supports grouped questions:
 
-> 本次贡献记录使用什么稳定用户名？公开时采用哪种署名方式？用户名可以是真名、昵称、公司内部昵称或其他稳定名称，不要求 GitHub/飞书账号。
->
-> 署名方式请选择：`username`（用户名） / `display_name`（显示名） / `anonymous`（匿名）。
+- stable username: real name, nickname, company-internal nickname, or another stable chosen name; no GitHub/Feishu account is required;
+- attribution: `username` / `display_name` / `anonymous`.
 
 Store the stable name as `contributor.username` and the publication choice as `submission_preferences.attribution`.
 
@@ -58,9 +77,9 @@ If they cannot confirm, save locally only.
 
 Show the AI-proposed title and ask to keep or edit it.
 
-## Recommended compact first-round prompt
+## Recommended compact first-round interaction
 
-When the type is already clear, group the remaining items into one interaction:
+When the type is already clear, collect these in one structured interaction when supported:
 
 1. username + attribution;
 2. visibility;
