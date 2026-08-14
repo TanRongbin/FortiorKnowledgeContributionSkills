@@ -11,7 +11,7 @@ from pathlib import Path
 
 from common import compact, feishu_tenant_access_token, http_json, load_config, require
 
-CLIENT_VERSION = "0.3.2"
+CLIENT_VERSION = "0.3.3"
 MAX_PAYLOAD_BYTES = 128 * 1024
 SECRET_PATTERNS = [
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
@@ -24,6 +24,16 @@ VISIBILITY_LABEL = {
     "private_governance_only": "仅治理人员可见",
 }
 ATTRIBUTION_LABEL = {"username": "用户名", "display_name": "显示名", "anonymous": "匿名"}
+ROOT_CAUSE_CONFIDENCE_LABEL = {
+    "confirmed": "已确认",
+    "strong_hypothesis": "强假设",
+    "unconfirmed": "未确认",
+}
+SENSITIVE_STATUS_LABEL = {
+    "no_sensitive_info": "无敏感信息",
+    "sanitized": "已脱敏",
+    "restricted": "受限/仅治理可见",
+}
 
 
 def validate(payload: dict, kind: str) -> list[str]:
@@ -71,6 +81,15 @@ def validate(payload: dict, kind: str) -> list[str]:
         warnings.append("summary is very short")
     if not payload.get("evidence_items"):
         warnings.append("no evidence_items supplied")
+
+    if kind == "review_point":
+        completion_keys = [
+            "problem_category", "engineering_series", "project_product", "chip_models",
+            "cpu_architectures", "program_modules", "runtime_stages", "root_cause_confidence",
+            "evidence_types", "non_applicable_conditions",
+        ]
+        if not any(payload.get(key) for key in completion_keys):
+            warnings.append("review-point engineering context is sparse; run the field-completion pass before production submission")
     return warnings
 
 
@@ -96,6 +115,15 @@ def text_list(value) -> str:
     if isinstance(value, list):
         return "\n".join(str(v) for v in value)
     return compact(value)
+
+
+def string_list(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    text = str(value).strip()
+    return [text] if text else []
 
 
 def common_feishu_fields(payload: dict, meta: dict) -> dict:
@@ -172,15 +200,69 @@ def _review_disclosed_source(payload: dict) -> str:
         parts.append(f"Commit: {source['commit']}")
     if prefs.get("allow_file_paths") and source.get("files"):
         parts.append("文件:\n" + text_list(source.get("files", [])))
+    if prefs.get("allow_code_excerpt") and payload.get("code_symbols"):
+        parts.append("涉及符号:\n" + text_list(payload.get("code_symbols", [])))
     return "\n".join(parts)
+
+
+def _review_project_product(payload: dict) -> str:
+    explicit = str(payload.get("project_product", "")).strip()
+    if explicit:
+        return explicit
+    prefs = payload.get("submission_preferences") or {}
+    repository = str((payload.get("source") or {}).get("repository", "")).strip()
+    if prefs.get("allow_repository_name") and repository:
+        return repository.rstrip("/").split("/")[-1]
+    return ""
+
+
+def _infer_review_evidence_types(payload: dict) -> list[str]:
+    explicit = string_list(payload.get("evidence_types"))
+    if explicit:
+        return explicit
+
+    result: list[str] = []
+    source = payload.get("source") or {}
+    prefs = payload.get("submission_preferences") or {}
+    evidence_text = "\n".join(string_list(payload.get("evidence_items"))).lower()
+
+    if prefs.get("allow_file_paths") and source.get("files"):
+        result.append("源码/文件")
+    if prefs.get("allow_commit_id") and source.get("commit"):
+        result.append("Git提交")
+    if any(word in evidence_text for word in ["log", "日志"]):
+        result.append("日志")
+    if any(word in evidence_text for word in ["waveform", "波形", "曲线", "trace", "抓波"]):
+        result.append("波形/Trace")
+    if any(word in evidence_text for word in ["test", "测试", "复现", "验证"]):
+        result.append("测试/复现")
+    if any(word in evidence_text for word in ["datasheet", "document", "文档", "规范", "手册"]):
+        result.append("工程文档")
+    if payload.get("evidence_items") and not result:
+        result.append("工程证据")
+    return list(dict.fromkeys(result))
+
+
+def _review_sensitive_status(payload: dict) -> str:
+    explicit = str(payload.get("sensitive_information_status", "")).strip()
+    if explicit in SENSITIVE_STATUS_LABEL:
+        return SENSITIVE_STATUS_LABEL[explicit]
+
+    privacy = payload.get("privacy") or {}
+    prefs = payload.get("submission_preferences") or {}
+    if prefs.get("visibility") == "private_governance_only":
+        return SENSITIVE_STATUS_LABEL["restricted"]
+    if privacy.get("contains_private_code") or privacy.get("sanitized"):
+        return SENSITIVE_STATUS_LABEL["sanitized"]
+    return SENSITIVE_STATUS_LABEL["no_sensitive_info"]
 
 
 def review_fields(payload: dict, meta: dict) -> dict:
     """Map the public Review Point schema into the existing Fortior Feishu review table.
 
-    Only fields that are known to exist in the current table are written. Select/multi-select
-    fields whose option vocabularies are governed elsewhere are intentionally left untouched;
-    their source information is preserved in 备注 until the shared field contract is unified.
+    Existing mapped content is preserved. Optional engineering-context fields are added when
+    available; absent context is omitted instead of guessed. Feishu accepts option names for
+    single/multi-select fields and creates missing options when necessary.
     """
     contributor = payload.get("contributor") or {}
     prefs = payload.get("submission_preferences") or {}
@@ -188,6 +270,19 @@ def review_fields(payload: dict, meta: dict) -> dict:
     correct = text_list(payload.get("correct_practice", []))
     fix = text_list(payload.get("fix_recommendation", []))
     fix_text = "\n".join(x for x in [correct, fix] if x)
+
+    context_note_pairs = [
+        ("问题类别", payload.get("problem_category")),
+        ("工程系列", text_list(payload.get("engineering_series", []))),
+        ("项目/产品", _review_project_product(payload)),
+        ("芯片型号", text_list(payload.get("chip_models", []))),
+        ("CPU架构", text_list(payload.get("cpu_architectures", []))),
+        ("程序模块", text_list(payload.get("program_modules", []))),
+        ("运行阶段", text_list(payload.get("runtime_stages", []))),
+        ("根因确认程度", ROOT_CAUSE_CONFIDENCE_LABEL.get(str(payload.get("root_cause_confidence", "")), "")),
+        ("证据类型", text_list(_infer_review_evidence_types(payload))),
+        ("不适用情况", text_list(payload.get("non_applicable_conditions", []))),
+    ]
 
     notes = [
         f"简要摘要: {payload.get('summary', '')}",
@@ -201,9 +296,10 @@ def review_fields(payload: dict, meta: dict) -> dict:
         f"内容哈希: {meta.get('content_hash', '')}",
         f"客户端版本: {meta.get('client_version', CLIENT_VERSION)}",
     ]
+    notes.extend(f"{label}: {value}" for label, value in context_note_pairs if value)
     notes = [x for x in notes if not x.endswith(": ")]
 
-    return {
+    fields = {
         "问题标题": payload.get("title", ""),
         "责任人": contributor.get("username", ""),
         "背景说明": payload.get("summary", ""),
@@ -215,11 +311,51 @@ def review_fields(payload: dict, meta: dict) -> dict:
         "证据说明": text_list(payload.get("evidence_items", [])),
         "修复方式": fix_text,
         "验证方式": text_list(payload.get("verification_method", [])),
+        "不适用情况": text_list(payload.get("non_applicable_conditions", [])),
         "评审问题": payload.get("review_question", ""),
         "检查方法": text_list(payload.get("inspection_method", [])),
         "失败判据": text_list(payload.get("failure_criteria", [])),
+        "敏感信息状态": _review_sensitive_status(payload),
         "备注": "\n".join(notes),
     }
+
+    problem_category = str(payload.get("problem_category", "")).strip()
+    if problem_category:
+        fields["问题类别"] = problem_category
+
+    engineering_series = string_list(payload.get("engineering_series"))
+    if engineering_series:
+        fields["工程系列"] = engineering_series
+
+    project_product = _review_project_product(payload)
+    if project_product:
+        fields["项目/产品"] = project_product
+
+    chip_models = string_list(payload.get("chip_models"))
+    if chip_models:
+        fields["芯片型号"] = "\n".join(chip_models)
+
+    cpu_architectures = string_list(payload.get("cpu_architectures"))
+    if cpu_architectures:
+        fields["CPU架构"] = cpu_architectures
+
+    program_modules = string_list(payload.get("program_modules"))
+    if program_modules:
+        fields["程序模块"] = program_modules
+
+    runtime_stages = string_list(payload.get("runtime_stages"))
+    if runtime_stages:
+        fields["运行阶段"] = runtime_stages
+
+    root_confidence = ROOT_CAUSE_CONFIDENCE_LABEL.get(str(payload.get("root_cause_confidence", "")), "")
+    if root_confidence:
+        fields["根因确认程度"] = root_confidence
+
+    evidence_types = _infer_review_evidence_types(payload)
+    if evidence_types:
+        fields["证据类型"] = evidence_types
+
+    return fields
 
 
 def submit_gateway(cfg: dict[str, str], kind: str, payload: dict, meta: dict):
