@@ -11,7 +11,7 @@ from pathlib import Path
 
 from common import compact, feishu_tenant_access_token, http_json, load_config, require
 
-CLIENT_VERSION = "0.3.0"
+CLIENT_VERSION = "0.3.1"
 MAX_PAYLOAD_BYTES = 128 * 1024
 SECRET_PATTERNS = [
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
@@ -203,7 +203,7 @@ def submit_feishu_direct(cfg: dict[str, str], kind: str, payload: dict, meta: di
     direct_meta["identity_status"] = "Owner直写"
     token = feishu_tenant_access_token(cfg)
     fields = experience_fields(payload, direct_meta) if kind == "experience" else review_fields(payload, direct_meta)
-    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{cfg['FEISHU_APP_TOKEN']}/tables/{cfg[table_key]}/records"
+    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{cfg['FEISHU_APP_TOKEN']}/tables/{conf[table_key]}/records"
     result = http_json("POST", url, {"fields": fields}, {"Authorization": f"Bearer {token}"})
     if result.get("code") != 0:
         raise RuntimeError(f"Feishu create record failed: {result}")
@@ -217,7 +217,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    payload = json.loads(Path(args.file).read_text(encoding="utf-8"))
+    payload = json.loads(Path(args.file).read_text(encoding="utf-8-sig"))
     cfg = load_config()
     warnings = validate(payload, args.type)
     meta = metadata(payload, cfg)
