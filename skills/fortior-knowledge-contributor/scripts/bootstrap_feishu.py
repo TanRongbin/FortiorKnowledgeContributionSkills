@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 
 from common import feishu_tenant_access_token, http_json, load_config, require
@@ -31,7 +30,11 @@ def number(name: str) -> dict:
 
 
 COMMON_FIELDS = [
-    text("提交ID"), text("贡献者用户名"), text("显示名"), text("GitHub用户名"),
+    text("提交ID"),
+    # Client-declared identity: useful for attribution, never sufficient for abuse controls.
+    text("贡献者用户名"), text("显示名"), text("GitHub用户名"),
+    # Server-verified identity: written by the production Contribution Gateway.
+    text("身份提供方"), text("已验证用户名"), text("已验证用户ID"),
     select("身份验证状态", ["未验证", "客户端声明", "服务端已验证", "Owner直写"]),
     select("公开范围", ["公开", "匿名公开", "仅治理人员可见"]),
     select("公开署名方式", ["用户名", "显示名", "匿名"]),
