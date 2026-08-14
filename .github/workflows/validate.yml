@@ -12,13 +12,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install gateway test dependencies
+        run: python -m pip install -r gateway/requirements.txt
       - name: Compile Python
         run: |
           python -m py_compile install.py bootstrap_feishu.py submit.py
           python -m py_compile skills/fortior-knowledge-contributor/scripts/common.py
           python -m py_compile skills/fortior-knowledge-contributor/scripts/submit.py
           python -m py_compile skills/fortior-knowledge-contributor/scripts/bootstrap_feishu.py
+          python -m py_compile gateway/app.py gateway/test_gateway.py
       - name: Validate experience example
         run: python submit.py --type experience --file skills/fortior-knowledge-contributor/examples/experience-example.json --dry-run
       - name: Validate review point example
         run: python submit.py --type review_point --file skills/fortior-knowledge-contributor/examples/review-point-example.json --dry-run
+      - name: Run gateway mock integration test
+        run: python gateway/test_gateway.py
