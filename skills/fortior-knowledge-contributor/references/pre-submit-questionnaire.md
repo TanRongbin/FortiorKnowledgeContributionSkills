@@ -1,14 +1,18 @@
 # Mandatory Pre-Submission Questionnaire
 
-Ask only unanswered items. Prefer one compact grouped question.
+Ask only unanswered items. Prefer **one compact grouped question** so the contributor normally answers everything in one round.
 
-## A. Contributor username — required
+## A. Contributor username + attribution — required
 
-Ask:
+Ask both together:
 
-> 本次贡献记录使用什么用户名？可以是真名、昵称、公司内部昵称或其他稳定名称，不要求 GitHub/飞书账号。
+> 本次贡献记录使用什么稳定用户名？公开时采用哪种署名方式？用户名可以是真名、昵称、公司内部昵称或其他稳定名称，不要求 GitHub/飞书账号。
+>
+> 署名方式请选择：`username`（用户名） / `display_name`（显示名） / `anonymous`（匿名）。
 
-Store as `contributor.username`.
+Store the stable name as `contributor.username` and the publication choice as `submission_preferences.attribution`.
+
+If the user says things like “Terry署名”“用用户名署名”“匿名”，map them directly and **do not ask a second attribution question**.
 
 Never require the user to create a third-party account.
 
@@ -29,24 +33,18 @@ Choose one:
 
 Never infer this choice from repository visibility.
 
-## D. Attribution
+## D. Source disclosure — explicit user choice
 
-Choose one:
-
-- `username`
-- `display_name`
-- `anonymous`
-
-## E. Source disclosure
-
-Explicitly allow/deny:
+Explicitly allow/deny each of:
 
 - repository name
 - commit id
 - relative file paths
 - minimal code excerpts
 
-## F. Rights / privacy confirmation
+If the user says “无”“均不披露”“全部不公开”，map all four to `false` and **do not ask four separate follow-ups**.
+
+## E. Rights / privacy confirmation
 
 Require explicit confirmation that:
 
@@ -56,9 +54,20 @@ Require explicit confirmation that:
 
 If they cannot confirm, save locally only.
 
-## G. Title confirmation
+## F. Title confirmation
 
 Show the AI-proposed title and ask to keep or edit it.
+
+## Recommended compact first-round prompt
+
+When the type is already clear, group the remaining items into one interaction:
+
+1. username + attribution;
+2. visibility;
+3. source disclosure (repository / commit / paths / code excerpt);
+4. title keep/edit + rights/privacy confirmation.
+
+Only ask a follow-up when an answer is genuinely ambiguous or incomplete.
 
 ## Optional, never required
 
