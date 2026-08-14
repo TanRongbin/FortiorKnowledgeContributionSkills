@@ -1,0 +1,7 @@
+interface:
+  display_name: "Fortior Knowledge Contributor"
+  short_description: "Capture solved engineering issues as reusable experience or review points"
+  default_prompt: "Use this skill to turn the engineering issue we just solved into a structured Engineering Experience or Review Point, ask the mandatory contributor/publication questions, preview the result, and submit only after confirmation."
+
+policy:
+  allow_implicit_invocation: true
