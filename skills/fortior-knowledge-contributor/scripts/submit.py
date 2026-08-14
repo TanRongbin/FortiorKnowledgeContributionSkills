@@ -11,7 +11,7 @@ from pathlib import Path
 
 from common import compact, feishu_tenant_access_token, http_json, load_config, require
 
-CLIENT_VERSION = "0.3.1"
+CLIENT_VERSION = "0.3.2"
 MAX_PAYLOAD_BYTES = 128 * 1024
 SECRET_PATTERNS = [
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
@@ -160,26 +160,66 @@ def experience_fields(payload: dict, meta: dict) -> dict:
     return fields
 
 
+def _review_disclosed_source(payload: dict) -> str:
+    source = payload.get("source") or {}
+    prefs = payload.get("submission_preferences") or {}
+    parts: list[str] = []
+    if prefs.get("allow_repository_name") and source.get("repository"):
+        parts.append(f"仓库: {source['repository']}")
+    if source.get("branch"):
+        parts.append(f"分支: {source['branch']}")
+    if prefs.get("allow_commit_id") and source.get("commit"):
+        parts.append(f"Commit: {source['commit']}")
+    if prefs.get("allow_file_paths") and source.get("files"):
+        parts.append("文件:\n" + text_list(source.get("files", [])))
+    return "\n".join(parts)
+
+
 def review_fields(payload: dict, meta: dict) -> dict:
-    fields = {
-        "评审点标题": payload.get("title", ""),
-        "简要摘要": payload.get("summary", ""),
-        "领域": text_list(payload.get("domain", [])),
+    """Map the public Review Point schema into the existing Fortior Feishu review table.
+
+    Only fields that are known to exist in the current table are written. Select/multi-select
+    fields whose option vocabularies are governed elsewhere are intentionally left untouched;
+    their source information is preserved in 备注 until the shared field contract is unified.
+    """
+    contributor = payload.get("contributor") or {}
+    prefs = payload.get("submission_preferences") or {}
+    source_experience_ids = text_list(payload.get("source_experience_ids", []))
+    correct = text_list(payload.get("correct_practice", []))
+    fix = text_list(payload.get("fix_recommendation", []))
+    fix_text = "\n".join(x for x in [correct, fix] if x)
+
+    notes = [
+        f"简要摘要: {payload.get('summary', '')}",
+        f"领域: {text_list(payload.get('domain', []))}",
+        f"适用范围: {text_list(payload.get('applicable_scope', []))}",
+        f"来源经验ID: {source_experience_ids}",
+        f"贡献者用户名: {contributor.get('username', '')}",
+        f"公开范围: {VISIBILITY_LABEL[prefs['visibility']]}",
+        f"公开署名方式: {ATTRIBUTION_LABEL[prefs['attribution']]}",
+        f"提交ID: {meta.get('submission_id', '')}",
+        f"内容哈希: {meta.get('content_hash', '')}",
+        f"客户端版本: {meta.get('client_version', CLIENT_VERSION)}",
+    ]
+    notes = [x for x in notes if not x.endswith(": ")]
+
+    return {
+        "问题标题": payload.get("title", ""),
+        "责任人": contributor.get("username", ""),
+        "背景说明": payload.get("summary", ""),
+        "异常表现": text_list(payload.get("failure_symptoms", [])),
+        "触发条件": text_list(payload.get("trigger_conditions", [])),
+        "根本原因/机理": payload.get("root_cause", ""),
+        "影响": text_list(payload.get("risk_impact", [])),
+        "涉及符号/代码": _review_disclosed_source(payload),
+        "证据说明": text_list(payload.get("evidence_items", [])),
+        "修复方式": fix_text,
+        "验证方式": text_list(payload.get("verification_method", [])),
         "评审问题": payload.get("review_question", ""),
         "检查方法": text_list(payload.get("inspection_method", [])),
         "失败判据": text_list(payload.get("failure_criteria", [])),
-        "触发条件": text_list(payload.get("trigger_conditions", [])),
-        "失败现象": text_list(payload.get("failure_symptoms", [])),
-        "根因": payload.get("root_cause", ""),
-        "风险影响": text_list(payload.get("risk_impact", [])),
-        "正确实践": text_list(payload.get("correct_practice", [])),
-        "修复建议": text_list(payload.get("fix_recommendation", [])),
-        "验证方法": text_list(payload.get("verification_method", [])),
-        "适用范围": text_list(payload.get("applicable_scope", [])),
-        "来源经验ID": text_list(payload.get("source_experience_ids", [])),
+        "备注": "\n".join(notes),
     }
-    fields.update(common_feishu_fields(payload, meta))
-    return fields
 
 
 def submit_gateway(cfg: dict[str, str], kind: str, payload: dict, meta: dict):
