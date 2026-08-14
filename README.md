@@ -134,7 +134,7 @@ gateway/app.py
 
 ```text
 mock    本地测试，不访问飞书
-afeishu 真实写入飞书（环境变量值实际使用 feishu）
+feishu  真实写入飞书
 ```
 
 推荐第一次先用 `mock`。
