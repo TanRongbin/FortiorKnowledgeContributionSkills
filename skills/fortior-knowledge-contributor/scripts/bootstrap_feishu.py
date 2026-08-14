@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create or non-destructively extend the two Fortior contribution tables."""
+"""Create or non-destructively extend Fortior contribution tables."""
 from __future__ import annotations
 
 import argparse
@@ -97,18 +97,49 @@ def create_field(app_token: str, table_id: str, token: str, spec: dict) -> None:
         raise RuntimeError(f"Create field {spec['field_name']} failed: {data}")
 
 
-def ensure_table(app_token: str, token: str, name: str, fields: list[dict], dry_run: bool) -> str | None:
+def resolve_table(
+    app_token: str,
+    token: str,
+    name: str,
+    configured_id: str,
+    primary_field: dict,
+    dry_run: bool,
+) -> str | None:
     tables = list_tables(app_token, token)
+
+    if configured_id:
+        found = next((x for x in tables if x.get("table_id") == configured_id), None)
+        if not found:
+            raise RuntimeError(f"Configured table_id not found in this Base: {configured_id}")
+        print(f"Using configured table: {found.get('name', name)} -> {configured_id}")
+        return configured_id
+
     found = next((x for x in tables if x.get("name") == name), None)
     if found:
         table_id = found["table_id"]
         print(f"Found table: {name} -> {table_id}")
-    elif dry_run:
+        return table_id
+
+    if dry_run:
         print(f"Would create table: {name}")
         return None
-    else:
-        table_id = create_table(app_token, token, name, fields[0])
-        print(f"Created table: {name} -> {table_id}")
+
+    table_id = create_table(app_token, token, name, primary_field)
+    print(f"Created table: {name} -> {table_id}")
+    return table_id
+
+
+def ensure_table(
+    app_token: str,
+    token: str,
+    name: str,
+    configured_id: str,
+    fields: list[dict],
+    dry_run: bool,
+) -> str | None:
+    table_id = resolve_table(app_token, token, name, configured_id, fields[0], dry_run)
+    if not table_id:
+        return None
 
     existing = {x.get("field_name"): x for x in list_fields(app_token, table_id, token)}
     for spec in fields:
@@ -126,22 +157,33 @@ def ensure_table(app_token: str, token: str, name: str, fields: list[dict], dry_
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--only", choices=["experience", "review_point"], help="Bootstrap only one contribution table")
     args = parser.parse_args()
 
     cfg = load_config()
     require(cfg, "FEISHU_APP_ID", "FEISHU_APP_SECRET", "FEISHU_APP_TOKEN")
     token = feishu_tenant_access_token(cfg)
     app_token = cfg["FEISHU_APP_TOKEN"]
+
     exp_name = cfg.get("FEISHU_EXPERIENCE_TABLE_NAME", "工程经验贡献")
     rp_name = cfg.get("FEISHU_REVIEW_POINT_TABLE_NAME", "评审点贡献")
+    exp_configured_id = cfg.get("FEISHU_EXPERIENCE_TABLE_ID", "").strip()
+    rp_configured_id = cfg.get("FEISHU_REVIEW_POINT_TABLE_ID", "").strip()
 
-    exp_id = ensure_table(app_token, token, exp_name, EXPERIENCE_FIELDS, args.dry_run)
-    rp_id = ensure_table(app_token, token, rp_name, REVIEW_FIELDS, args.dry_run)
+    exp_id: str | None = exp_configured_id or None
+    rp_id: str | None = rp_configured_id or None
+
+    if args.only in (None, "experience"):
+        exp_id = ensure_table(app_token, token, exp_name, exp_configured_id, EXPERIENCE_FIELDS, args.dry_run)
+    if args.only in (None, "review_point"):
+        rp_id = ensure_table(app_token, token, rp_name, rp_configured_id, REVIEW_FIELDS, args.dry_run)
 
     if not args.dry_run:
-        print("\nWrite these values into ~/.fortior/knowledge-contributor.env:")
-        print(f"FEISHU_EXPERIENCE_TABLE_ID={exp_id}")
-        print(f"FEISHU_REVIEW_POINT_TABLE_ID={rp_id}")
+        print("\nWrite/keep these values in ~/.fortior/knowledge-contributor.env:")
+        if exp_id:
+            print(f"FEISHU_EXPERIENCE_TABLE_ID={exp_id}")
+        if rp_id:
+            print(f"FEISHU_REVIEW_POINT_TABLE_ID={rp_id}")
 
 
 if __name__ == "__main__":
