@@ -25,6 +25,36 @@ def load_config() -> dict[str, str]:
     return cfg
 
 
+def update_config_values(updates: dict[str, str]) -> Path:
+    """Update selected keys in the local config while preserving comments/order."""
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    remaining = {k: str(v) for k, v in updates.items()}
+    out: list[str] = []
+
+    for raw in lines:
+        if "=" not in raw or raw.lstrip().startswith("#"):
+            out.append(raw)
+            continue
+        key, _ = raw.split("=", 1)
+        stripped = key.strip()
+        if stripped in remaining:
+            out.append(f"{stripped}={remaining.pop(stripped)}")
+        else:
+            out.append(raw)
+
+    if remaining:
+        if out and out[-1].strip():
+            out.append("")
+        out.append("# Updated automatically by Fortior setup")
+        for key, value in remaining.items():
+            out.append(f"{key}={value}")
+
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    return path
+
+
 def require(cfg: dict[str, str], *keys: str) -> None:
     missing = [k for k in keys if not cfg.get(k)]
     if missing:
