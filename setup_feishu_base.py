@@ -33,6 +33,35 @@ def parse_base_url(url: str) -> tuple[str, str]:
     return app_token, table_id
 
 
+def ensure_fields_resumable(app_token: str, table_id: str, token: str, fields: list[dict]) -> None:
+    """Add missing fields and recover safely when Feishu times out after accepting a request."""
+    existing = {x.get("field_name") for x in bf.list_fields(app_token, table_id, token)}
+    for spec in fields:
+        fname = spec["field_name"]
+        if fname in existing:
+            print(f"  exists: {fname}")
+            continue
+        try:
+            bf.create_field(app_token, table_id, token, spec)
+            existing.add(fname)
+            print(f"  added: {fname}")
+            continue
+        except Exception as first_exc:
+            print(f"  warning: create field {fname} returned an error: {first_exc}")
+
+        # A write may have succeeded even when the client timed out waiting for the response.
+        refreshed = {x.get("field_name") for x in bf.list_fields(app_token, table_id, token)}
+        if fname in refreshed:
+            existing = refreshed
+            print(f"  recovered: {fname} already exists after the timeout")
+            continue
+
+        print(f"  retrying once: {fname}")
+        bf.create_field(app_token, table_id, token, spec)
+        existing.add(fname)
+        print(f"  added after retry: {fname}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Bind an existing Feishu Base and create/extend only the Engineering Experience table"
@@ -70,34 +99,43 @@ def main() -> None:
 
     exp_name = cfg.get("FEISHU_EXPERIENCE_TABLE_NAME", "工程经验贡献")
     exp_configured_id = cfg.get("FEISHU_EXPERIENCE_TABLE_ID", "").strip()
-    exp_id = bf.ensure_table(
+    exp_id = bf.resolve_table(
         app_token,
         token,
         exp_name,
         exp_configured_id,
-        bf.EXPERIENCE_FIELDS,
+        bf.EXPERIENCE_FIELDS[0],
         args.dry_run,
     )
 
     if args.dry_run:
+        if exp_id:
+            existing = {x.get("field_name") for x in bf.list_fields(app_token, exp_id, token)}
+            for spec in bf.EXPERIENCE_FIELDS:
+                if spec["field_name"] not in existing:
+                    print(f"  would add: {spec['field_name']}")
         print("\nDRY RUN: no Feishu table/field changes were made.")
         return
 
     if not exp_id:
         raise RuntimeError("Experience table was not resolved/created")
 
+    # Save the table ID immediately. A later field timeout must not lose routing state.
     path = update_config_values({
         "FEISHU_APP_TOKEN": app_token,
         "FEISHU_REVIEW_POINT_TABLE_ID": review_table_id,
         "FEISHU_EXPERIENCE_TABLE_ID": exp_id,
         "FEISHU_EXPERIENCE_TABLE_NAME": exp_name,
     })
+    print(f"Saved experience table routing before field migration: {exp_id}")
+
+    ensure_fields_resumable(app_token, exp_id, token, bf.EXPERIENCE_FIELDS)
 
     print("\nFeishu routing ready:")
     print(f"  review_point -> {review_table_id}")
     print(f"  engineering_experience -> {exp_id}")
     print(f"Saved to: {path}")
-    print("Next: test an experience submission first; review-point field mapping remains a separate compatibility step.")
+    print("Next: test an experience submission, then test the existing review-point table adapter.")
 
 
 if __name__ == "__main__":
