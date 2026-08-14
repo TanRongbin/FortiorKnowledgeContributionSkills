@@ -1,0 +1,18 @@
+# secrets / local configuration
+.env
+*.env
+!*.example.env
+.fortior/
+
+# generated contributions
+.contributions/
+contribution.json
+
+# Python
+__pycache__/
+*.pyc
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store

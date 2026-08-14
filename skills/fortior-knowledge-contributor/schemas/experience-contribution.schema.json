@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Fortior Engineering Experience Contribution",
+  "type": "object",
+  "required": ["schema_version", "contribution_type", "title", "problem_description", "symptom", "root_cause", "solution", "verification", "lessons_learned", "contributor", "submission_preferences", "evidence_items", "privacy"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "contribution_type": {"const": "engineering_experience"},
+    "title": {"type": "string", "minLength": 4, "maxLength": 160},
+    "summary": {"type": "string"},
+    "domain": {"type": "array", "items": {"type": "string"}},
+    "problem_context": {"type": "string"},
+    "problem_description": {"type": "string", "minLength": 8},
+    "symptom": {"type": "string", "minLength": 4},
+    "trigger_conditions": {"type": "array", "items": {"type": "string"}},
+    "investigation_process": {"type": "array", "items": {"type": "string"}},
+    "root_cause": {"type": "object", "required": ["status", "description"], "properties": {"status": {"enum": ["confirmed", "strong_hypothesis", "unconfirmed"]}, "description": {"type": "string"}, "evidence": {"type": "array", "items": {"type": "string"}}}},
+    "solution": {"type": "string", "minLength": 4},
+    "code_or_parameter_changes": {"type": "array", "items": {"type": "string"}},
+    "verification": {"type": "object", "required": ["status", "method", "result"], "properties": {"status": {"enum": ["passed", "partial", "not_verified"]}, "method": {"type": "string"}, "result": {"type": "string"}}},
+    "benefit": {"type": "string"},
+    "lessons_learned": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "applicable_scope": {"type": "array", "items": {"type": "string"}},
+    "source": {"type": "object", "properties": {"repository": {"type": "string"}, "branch": {"type": "string"}, "commit": {"type": "string"}, "files": {"type": "array", "items": {"type": "string"}}}},
+    "evidence_items": {"type": "array", "items": {"type": "string"}},
+    "contributor": {"type": "object", "required": ["username"], "properties": {"username": {"type": "string", "minLength": 1, "maxLength": 80}, "display_name": {"type": "string"}, "github_username": {"type": "string"}}},
+    "submission_preferences": {"$ref": "#/$defs/submission_preferences"},
+    "privacy": {"type": "object", "required": ["contains_private_code", "sanitized"], "properties": {"contains_private_code": {"type": "boolean"}, "sanitized": {"type": "boolean"}, "notes": {"type": "string"}}}
+  },
+  "$defs": {
+    "submission_preferences": {
+      "type": "object",
+      "required": ["visibility", "attribution", "allow_repository_name", "allow_commit_id", "allow_file_paths", "allow_code_excerpt", "rights_confirmed"],
+      "properties": {
+        "visibility": {"enum": ["public", "anonymized_public", "private_governance_only"]},
+        "attribution": {"enum": ["username", "display_name", "anonymous"]},
+        "allow_repository_name": {"type": "boolean"},
+        "allow_commit_id": {"type": "boolean"},
+        "allow_file_paths": {"type": "boolean"},
+        "allow_code_excerpt": {"type": "boolean"},
+        "rights_confirmed": {"const": true}
+      }
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Fortior Review Point Contribution",
+  "type": "object",
+  "required": ["schema_version", "contribution_type", "title", "review_question", "inspection_method", "failure_criteria", "risk_impact", "correct_practice", "verification_method", "contributor", "submission_preferences", "evidence_items", "privacy"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "contribution_type": {"const": "review_point"},
+    "title": {"type": "string", "minLength": 4, "maxLength": 160},
+    "summary": {"type": "string"},
+    "domain": {"type": "array", "items": {"type": "string"}},
+    "review_question": {"type": "string", "minLength": 8},
+    "inspection_method": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "failure_criteria": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "trigger_conditions": {"type": "array", "items": {"type": "string"}},
+    "failure_symptoms": {"type": "array", "items": {"type": "string"}},
+    "root_cause": {"type": "string"},
+    "risk_impact": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "correct_practice": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "fix_recommendation": {"type": "array", "items": {"type": "string"}},
+    "verification_method": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "applicable_scope": {"type": "array", "items": {"type": "string"}},
+    "source_experience_ids": {"type": "array", "items": {"type": "string"}},
+    "source": {"type": "object", "properties": {"repository": {"type": "string"}, "branch": {"type": "string"}, "commit": {"type": "string"}, "files": {"type": "array", "items": {"type": "string"}}}},
+    "evidence_items": {"type": "array", "items": {"type": "string"}},
+    "contributor": {"type": "object", "required": ["username"], "properties": {"username": {"type": "string", "minLength": 1, "maxLength": 80}, "display_name": {"type": "string"}, "github_username": {"type": "string"}}},
+    "submission_preferences": {"type": "object", "required": ["visibility", "attribution", "allow_repository_name", "allow_commit_id", "allow_file_paths", "allow_code_excerpt", "rights_confirmed"], "properties": {"visibility": {"enum": ["public", "anonymized_public", "private_governance_only"]}, "attribution": {"enum": ["username", "display_name", "anonymous"]}, "allow_repository_name": {"type": "boolean"}, "allow_commit_id": {"type": "boolean"}, "allow_file_paths": {"type": "boolean"}, "allow_code_excerpt": {"type": "boolean"}, "rights_confirmed": {"const": true}}},
+    "privacy": {"type": "object", "required": ["contains_private_code", "sanitized"], "properties": {"contains_private_code": {"type": "boolean"}, "sanitized": {"type": "boolean"}, "notes": {"type": "string"}}}
+  },
+  "additionalProperties": true
+}
