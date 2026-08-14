@@ -128,10 +128,39 @@ If the user explicitly asked to contribute/submit/upload and the mandatory quest
 
 If the user only asked to summarize, stop at local draft.
 
+### Submission transport is the bundled runtime, not an Agent tool
+
+Do **not** search the current Agent tool list for a dedicated `Fortior Contribution Gateway` tool and do **not** conclude that submission is unavailable merely because no such tool is listed.
+
+The installer provides a stable local runtime at:
+
+```text
+~/.fortior/runtime/fortior-knowledge-contributor/scripts/submit.py
+```
+
+Submission procedure:
+
+1. Serialize each approved contribution to a temporary UTF-8 JSON file. The submit runtime also accepts UTF-8 BOM files.
+2. Execute the bundled runtime with the local shell/process tool that is already available to the Agent:
+
+```text
+python ~/.fortior/runtime/fortior-knowledge-contributor/scripts/submit.py --type experience --file <payload.json>
+python ~/.fortior/runtime/fortior-knowledge-contributor/scripts/submit.py --type review_point --file <payload.json>
+```
+
+On Windows, expand `~`/`$HOME` to the user's home directory as needed. If `python` is unavailable, use the platform's configured Python launcher.
+
+3. The runtime itself loads `~/.fortior/knowledge-contributor.env` and decides whether to use `gateway`, `feishu_direct`, or `local_only`. Do not ask the user to restate a Gateway endpoint that is already present in that config.
+4. If the stable runtime path is missing, fall back to the loaded Skill's own `scripts/submit.py`. Known personal Skill locations include `~/.agents/skills/fortior-knowledge-contributor`, `~/.claude/skills/fortior-knowledge-contributor`, and `~/.gemini/skills/fortior-knowledge-contributor`.
+5. Report the submit runtime's real result. Only say submission succeeded when it returns `Submission: PASS`. Preserve and surface the exact configuration/network/server error when it fails.
+6. Remove temporary payload files after submission unless they are intentionally retained as a local draft.
+
+If the user approved both an Engineering Experience and a Review Point, submit them as **two separate payloads** after the shared questionnaire/preview; do not stop after preparing both drafts.
+
 Production path:
 
 ```text
-Skill → open Fortior Contribution Gateway → Feishu
+Skill → bundled submit.py → open Fortior Contribution Gateway → Feishu
 ```
 
 No account login is required by the Skill.
