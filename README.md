@@ -2,63 +2,73 @@
 
 Open-source Agent Skills for capturing engineering experience and contributing structured software review knowledge.
 
-本仓库只存放公开、可复用的知识贡献 Skill。它把真实软件开发过程中的知识拆成两类：
+本仓库只存放公开、可复用的知识贡献 Skill。任何人都可以下载安装，不要求 GitHub、飞书或其他平台账号。
+
+知识分成两类：
 
 - **Engineering Experience（工程经验）**：问题如何发生、如何定位、根因、修复、验证与经验教训。
 - **Review Point（程序评审点）**：以后评审其他项目时应该检查什么、如何检查、什么情况判 Fail、正确实践是什么。
 
-两类知识使用独立 Schema、独立飞书数据表、独立治理状态；Experience 可以作为 Review Point 的来源证据，但不会自动被提升成正式评审点。
+Experience 与 Review Point 使用独立 Schema、独立飞书数据表和独立治理流程。
+
+## 设计原则：开放贡献，不绑定账号
+
+第一版采用 **Open Contribution**：
+
+```text
+任何安装 Skill 的用户
+   ↓
+AI 自动总结
+   ↓
+用户填写用户名 + 公开范围等必答项
+   ↓
+本地检查
+   ↓
+Fortior Contribution Gateway（无需登录）
+   ↓
+基础限流 / 去重 / 大小检查
+   ↓
+飞书待治理
+```
+
+**不要求 GitHub 登录。** GitHub、飞书账号或其他身份验证以后只能作为可选增强，不能成为所有用户贡献的前置条件。
 
 ## 支持的 AI 编程环境
 
-本项目使用 `SKILL.md` 为核心，按 Agent Skills 开放格式组织。
-
-| 平台 | 用户级安装位置 | 本仓库安装器 |
+| 平台 | 用户级安装位置 | 支持 |
 |---|---|---|
-| OpenAI Codex | `~/.agents/skills/` | 支持 |
-| GitHub Copilot / Copilot CLI | `~/.agents/skills/` 或 `~/.copilot/skills/` | 支持 |
-| Claude Code | `~/.claude/skills/` | 支持 |
-| Gemini CLI | `~/.gemini/skills/` | 支持 |
-| 其他 Agent Skills 兼容工具 | 自定义目录 | `--target custom --path ...` |
-
-> 同一个 `SKILL.md` 是知识源；安装器只负责复制到不同宿主的发现目录，不为每个平台维护不同逻辑。
+| OpenAI Codex | `~/.agents/skills/` | ✅ |
+| GitHub Copilot / Copilot CLI | `~/.agents/skills/` | ✅ |
+| Claude Code | `~/.claude/skills/` | ✅ |
+| Gemini CLI | `~/.gemini/skills/` | ✅ |
+| 其他 Agent Skills 兼容工具 | 自定义目录 | ✅ |
 
 ## 一键安装
-
-克隆仓库后：
 
 ```bash
 python install.py --target auto
 ```
 
-`auto` 会检测本机已安装的 CLI，并安装到对应位置。
-
-安装到所有已支持平台：
+安装到所有支持位置：
 
 ```bash
 python install.py --target all
 ```
 
-只安装某个平台：
+或指定平台：
 
 ```bash
-python install.py --target agents
+python install.py --target codex
+python install.py --target copilot
 python install.py --target claude
 python install.py --target gemini
-python install.py --target copilot
 ```
 
-其中 `agents` 是 OpenAI Codex 与 GitHub Copilot 都支持的开放用户级目录。
+每次安装会生成一个随机 `FORTIOR_CLIENT_INSTANCE_ID`。它**不是账号，也不是身份认证**，只作为未来重复提交和滥用分析的弱信号。
 
-Gemini CLI 也支持直接从 GitHub 安装 Skill：
+## 使用
 
-```bash
-gemini skills install https://github.com/TanRongbin/FortiorKnowledgeContributionSkills
-```
-
-## 使用方式
-
-解决完一个真实问题后，可以直接对本地 AI CLI 说：
+解决完一个真实问题后，对本地 AI CLI 说：
 
 ```text
 把刚刚解决的问题贡献为工程经验
@@ -67,96 +77,79 @@ gemini skills install https://github.com/TanRongbin/FortiorKnowledgeContribution
 或：
 
 ```text
-使用 fortior-knowledge-contributor，把这个问题抽象成程序评审点
+把这个问题抽象成程序评审点并贡献
 ```
 
-Skill 会优先复用当前对话和当前 Git 仓库上下文，并按需检查 `git diff`、Commit、相关源码、日志、测试和用户确认，不要求工程师重新描述一次完整问题。
+Skill 会优先利用当前对话、`git diff`、Commit、相关源码、日志、测试与用户确认，不要求重新描述一次完整问题。
 
-## 提交前必须由用户确认
+## 提交前必须人工选择
 
-AI 自动总结完成后，**不得直接上传**。Skill 必须先向用户确认至少这些信息：
+AI 生成内容后不能立即上传。至少要确认：
 
-1. 贡献者用户名；
-2. 本次贡献是工程经验还是评审点（如果此前未明确）；
-3. 是否允许公开：`公开` / `匿名公开` / `仅治理人员可见`；
-4. 公开时采用什么署名；
-5. 是否允许公开仓库名、Commit、文件路径、必要代码摘录；
-6. 是否确认自己有权提交这些材料，且已清理密钥、客户隐私和其他敏感信息；
-7. AI 生成的标题和关键结论是否需要人工修改。
+1. **贡献者用户名**（不要求是真名，也不要求任何第三方账号）；
+2. 工程经验 / 程序评审点；
+3. 公开范围：`公开` / `匿名公开` / `仅治理人员可见`；
+4. 公开署名：用户名 / 显示名 / 匿名；
+5. 是否允许未来公开仓库名、Commit、文件路径、必要代码摘录；
+6. 是否有权提交且已排除密钥、客户隐私等敏感内容；
+7. AI 建议标题是否保留或修改。
 
-完整规则见 `skills/fortior-knowledge-contributor/references/pre-submit-questionnaire.md`。
+详见 `skills/fortior-knowledge-contributor/references/pre-submit-questionnaire.md`。
 
-## 公开仓库 ≠ 所有人能写飞书
+## 防垃圾：第一版先轻量，后续可逐步收紧
 
-公开 GitHub 仓库只是让所有人都能**下载 Skill**。它不会自动给任何人飞书 App Secret，也不会自动获得飞书写权限。
+开放贡献不等于飞书密钥公开。普通用户只知道 Gateway 地址，飞书 App Secret 只保存在服务端。
 
-生产环境推荐：
+V1 Gateway 不登录，但至少做：
+
+- 请求大小限制；
+- 必填字段校验；
+- `content_hash` 精确去重；
+- 按 IP / 用户名 / client_instance_id 的轻量限流；
+- 高置信密钥模式拦截；
+- 所有记录默认 `待治理`。
+
+未来如果垃圾量变大，可以**不改 Skill 主流程**，只把 Gateway 模式从：
+
+```env
+FORTIOR_GATEWAY_MODE=open
+```
+
+改为：
+
+```env
+FORTIOR_GATEWAY_MODE=edit_code
+```
+
+然后只向允许贡献的人发一个“贡献编辑码”。它不要求 GitHub/飞书账号，也比账号体系更符合当前目标。
+
+更进一步还可以增加信誉、验证码、可选身份验证等，但都不是第一版前置条件。
+
+## Gateway 参考实现
+
+仓库已包含一个无需登录的参考 Gateway：
 
 ```text
-公开 Skill
-   ↓
-用户确认 + 本地 Schema/隐私检查
-   ↓
-Fortior Contribution Gateway
-   ↓
-身份验证 / 限流 / 去重 / 垃圾检测 / 风险评分
-   ↓
-飞书：待治理贡献
-   ↓
-Owner 治理
-   ↓
-FortiorReviewPoints
+gateway/app.py
 ```
 
-普通贡献者**不直接持有飞书密钥**。只有 Owner 内部调试模式才允许 `feishu_direct`。
+本地运行：
 
-防垃圾的关键不是客户端 Skill，因为恶意用户可以修改开源代码；真正强制执行的风控必须放在服务端 Gateway。设计见 `docs/SECURITY_AND_ANTI_SPAM.md`。
+```bash
+pip install -r gateway/requirements.txt
+uvicorn gateway.app:app --host 0.0.0.0 --port 8080
+```
 
-## 身份
-
-每条贡献至少保存一个 `contributor.username`。生产 Gateway 还应写入服务端验证后的身份字段，例如：
-
-- `verified_identity_provider = github`
-- `verified_username`
-- `verified_user_id`
-- `identity_verified = true`
-
-客户端自己上报的用户名只能作为显示信息，不能当作可信身份。
+生产部署只需把飞书凭据放在 Gateway 的环境变量中，不放进公开 Skill。
 
 ## 飞书
 
-仓库提供：
+`bootstrap_feishu.py` 会非破坏性创建/补齐：
 
-- `bootstrap_feishu.py`：在同一个多维表格中建立/补齐 `工程经验贡献` 和 `评审点贡献` 两张表；
-- `submit.py`：按贡献类型写入对应表；
-- `config.example.env`：本地 Owner 配置模板。
+- `工程经验贡献`
+- `评审点贡献`
 
-公开用户默认应使用 Gateway，不应获得 `FEISHU_APP_SECRET`。
-
-## 目录
-
-```text
-.
-├─ install.py
-├─ README.md
-├─ LICENSE
-├─ docs/
-│  ├─ ARCHITECTURE.md
-│  └─ SECURITY_AND_ANTI_SPAM.md
-└─ skills/
-   └─ fortior-knowledge-contributor/
-      ├─ SKILL.md
-      ├─ config.example.env
-      ├─ schemas/
-      │  ├─ experience-contribution.schema.json
-      │  └─ review-point-contribution.schema.json
-      ├─ references/
-      │  ├─ pre-submit-questionnaire.md
-      │  └─ evidence-and-privacy.md
-      └─ scripts/
-         ├─ submit.py
-         └─ bootstrap_feishu.py
-```
+两张表都会保存：贡献者用户名、公开权限、client instance、内容哈希、风控状态和治理状态。
 
 ## License
 

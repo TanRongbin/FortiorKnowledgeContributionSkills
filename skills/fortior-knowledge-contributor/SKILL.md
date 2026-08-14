@@ -1,35 +1,38 @@
 ---
 name: fortior-knowledge-contributor
-description: Capture a solved software or embedded engineering issue as structured Engineering Experience, or abstract evidence into a reusable Review Point; ask the contributor mandatory publication/privacy questions before any submission.
+description: Capture a solved software or embedded engineering issue as structured Engineering Experience, or abstract evidence into a reusable Review Point; ask mandatory contributor/publication questions before submission. No third-party account login is required.
 ---
 
 # Fortior Knowledge Contributor
 
-## Scope
+## Core rule
 
-This skill has two outputs:
+This skill must remain usable by **any installed user**. Do not require GitHub, Feishu, company SSO or another third-party account before contribution.
 
-1. `engineering_experience`: what actually happened in one real engineering case.
+A user-chosen `contributor.username` is required for provenance, but it is a declared username, not verified identity.
+
+## Two outputs
+
+1. `engineering_experience`: what happened in one real engineering case.
 2. `review_point`: a reusable review/control rule for future projects.
 
 Do not treat them as equivalent.
 
-## Typical triggers
+## Trigger examples
 
 - 把刚刚解决的问题贡献一下
-- 总结成工程经验
+- 总结成工程经验并提交
 - 把这个问题沉淀下来
-- 总结成评审点
-- 把这次修改抽象成审查项
+- 总结成评审点并贡献
 - contribute this solved issue
 
-If the user does not specify a type, default to `engineering_experience` unless the intent is clearly a reusable review rule.
+If the user does not specify a type, prefer `engineering_experience`.
 
 ## Phase 1 — Recover the real issue
 
-Use information already available in the current session first. Do not force the user to restate it.
+Use the current session first. Do not force the user to restate information already available.
 
-When relevant and permitted, inspect:
+When relevant, inspect:
 
 ```bash
 git status --short
@@ -41,98 +44,75 @@ git rev-parse HEAD
 git remote -v
 ```
 
-Read only relevant files. Use available tests, logs, traces, waveforms, screenshots and user confirmation.
+Use relevant tests, logs, waveforms, traces and user confirmation.
 
 ## Phase 2 — Separate evidence from inference
 
-Root cause confidence must be one of:
+Root cause confidence:
 
 - `confirmed`
 - `strong_hypothesis`
 - `unconfirmed`
 
-Never promote a guess merely to complete a field.
+Never promote a guess just to fill a field.
 
-## Phase 3 — Draft the contribution
+## Phase 3 — Draft
 
-For Experience, preserve:
+Experience preserves:
 
 `problem → symptom → trigger → investigation → root cause → solution → verification → benefit → lesson → scope → evidence`
 
-For Review Point, preserve:
+Review Point preserves:
 
 `review question → inspection → failure criteria → trigger → risk → correct practice → verification → scope → evidence`
 
-Review Point titles should be control/review concepts, not bug-story titles.
+## Phase 4 — Mandatory user questionnaire
 
-## Phase 4 — Mandatory contributor questionnaire
+Read `references/pre-submit-questionnaire.md` and ask only unanswered mandatory items.
 
-Before creating the final submission payload, read `references/pre-submit-questionnaire.md` and ask all mandatory unanswered items.
+Rules:
 
-Important:
+- `contributor.username` is mandatory.
+- Do **not** require a GitHub username.
+- Do **not** require Feishu login.
+- Publication/privacy choices must be explicitly selected by the user.
+- If already answered in the conversation, do not ask again.
+- Show the proposed title and allow keep/edit.
 
-- `contributor.username` is required.
-- Publication/privacy choices must come from the user, not AI inference.
-- If the user has already answered one item clearly in the current conversation, do not ask it again.
-- Show the AI-proposed title and allow the user to keep or edit it.
-
-## Phase 5 — Privacy and evidence check
+## Phase 5 — Privacy check
 
 Read `references/evidence-and-privacy.md`.
 
-Do not submit secrets, credentials, customer personal data or irrelevant proprietary code.
-
-If private code exists, sanitize before upload and accurately set privacy/disclosure fields.
+Do not submit secrets, credentials, unnecessary customer/personal data or irrelevant proprietary code.
 
 ## Phase 6 — Preview
 
-Show a concise final preview with:
+Show:
 
 - type
 - title
 - contributor username
-- publication level and attribution
-- root cause / review question
-- solution / failure criteria
+- publication level / attribution
+- root cause or review question
+- solution or failure criteria
 - verification / evidence
 - source disclosure choices
 - uncertainty
 
-Do not silently send a materially different payload.
-
 ## Phase 7 — Submit
 
-A user's explicit request to “贡献/提交/上传” plus completion of the mandatory questionnaire authorizes submission of the previewed payload. If they only asked to “总结”, stop after generating the local draft unless they then ask to submit.
+If the user explicitly asked to contribute/submit/upload and the mandatory questionnaire is complete, remote submission is allowed after preview.
 
-Save JSON under `.contributions/` when practical.
-
-Validate locally with the bundled submission script in dry-run mode before real submission.
+If the user only asked to summarize, stop at local draft.
 
 Production path:
 
 ```text
-Skill → authenticated Fortior Contribution Gateway → Feishu
+Skill → open Fortior Contribution Gateway → Feishu
 ```
 
-Owner-only internal path:
+No account login is required by the Skill.
 
-```text
-Skill → Feishu direct mode
-```
+The Gateway may later enable a non-account `edit_code` mode. If the server reports that an edit code is required, ask the user for the code or tell them where to configure it; do not redirect them to GitHub login.
 
-Never expose an Owner Feishu secret to a normal contributor.
-
-## Completion report
-
-Report:
-
-- contribution type
-- title
-- contributor username
-- local JSON path (if written)
-- validation result
-- submission result
-- remote submission/record ID if returned
-- governance note
-
-A successful submission means **entered governance**, not **approved into FortiorReviewPoints**.
+Successful submission means **entered governance**, not **approved into FortiorReviewPoints**.

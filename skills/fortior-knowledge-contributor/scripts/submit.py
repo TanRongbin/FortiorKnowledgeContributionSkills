@@ -11,9 +11,8 @@ from pathlib import Path
 
 from common import compact, feishu_tenant_access_token, http_json, load_config, require
 
-CLIENT_VERSION = "0.2.0"
+CLIENT_VERSION = "0.3.0"
 MAX_PAYLOAD_BYTES = 128 * 1024
-
 SECRET_PATTERNS = [
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     re.compile(r"\bsk-[A-Za-z0-9_-]{24,}\b"),
@@ -39,7 +38,7 @@ def validate(payload: dict, kind: str) -> list[str]:
 
     contributor = payload.get("contributor") or {}
     if not str(contributor.get("username", "")).strip():
-        raise RuntimeError("contributor.username is required and must be confirmed by the user")
+        raise RuntimeError("contributor.username is required")
 
     prefs = payload.get("submission_preferences") or {}
     required_prefs = [
@@ -54,7 +53,7 @@ def validate(payload: dict, kind: str) -> list[str]:
     if prefs.get("attribution") not in ATTRIBUTION_LABEL:
         raise RuntimeError("Invalid submission_preferences.attribution")
     if prefs.get("rights_confirmed") is not True:
-        raise RuntimeError("rights_confirmed must be explicitly true before remote submission")
+        raise RuntimeError("rights_confirmed must be explicitly true")
 
     privacy = payload.get("privacy") or {}
     if privacy.get("contains_private_code") and not privacy.get("sanitized"):
@@ -66,7 +65,7 @@ def validate(payload: dict, kind: str) -> list[str]:
         raise RuntimeError(f"Payload too large: {size} bytes > {MAX_PAYLOAD_BYTES}")
     for pattern in SECRET_PATTERNS:
         if pattern.search(raw):
-            raise RuntimeError("High-confidence credential/private-key pattern detected; sanitize before submission")
+            raise RuntimeError("High-confidence credential/private-key pattern detected")
 
     if len(str(payload.get("summary", "")).strip()) < 12:
         warnings.append("summary is very short")
@@ -80,11 +79,16 @@ def canonical_hash(payload: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def metadata(payload: dict) -> dict:
+def metadata(payload: dict, cfg: dict[str, str]) -> dict:
     return {
         "submission_id": str(uuid.uuid4()),
         "content_hash": canonical_hash(payload),
-        "client_version": CLIENT_VERSION,
+        "client_version": cfg.get("FORTIOR_CLIENT_VERSION", CLIENT_VERSION),
+        "client_instance_id": cfg.get("FORTIOR_CLIENT_INSTANCE_ID", ""),
+        "identity_status": "未验证",
+        "identity_provider": "",
+        "verified_username": "",
+        "verified_user_id": "",
     }
 
 
@@ -99,11 +103,15 @@ def common_feishu_fields(payload: dict, meta: dict) -> dict:
     prefs = payload.get("submission_preferences", {})
     source = payload.get("source", {})
     return {
-        "提交ID": meta["submission_id"],
+        "提交ID": meta.get("submission_id", ""),
         "贡献者用户名": contributor.get("username", ""),
         "显示名": contributor.get("display_name", ""),
         "GitHub用户名": contributor.get("github_username", ""),
-        "身份验证状态": "Owner直写",
+        "客户端实例ID": meta.get("client_instance_id", ""),
+        "身份提供方": meta.get("identity_provider", ""),
+        "已验证用户名": meta.get("verified_username", ""),
+        "已验证用户ID": meta.get("verified_user_id", ""),
+        "身份验证状态": meta.get("identity_status", "未验证"),
         "公开范围": VISIBILITY_LABEL[prefs["visibility"]],
         "公开署名方式": ATTRIBUTION_LABEL[prefs["attribution"]],
         "允许公开仓库名": bool(prefs["allow_repository_name"]),
@@ -116,10 +124,10 @@ def common_feishu_fields(payload: dict, meta: dict) -> dict:
         "Commit": source.get("commit", ""),
         "相关文件": text_list(source.get("files", [])),
         "证据": text_list(payload.get("evidence_items", [])),
-        "内容哈希": meta["content_hash"],
-        "客户端版本": meta["client_version"],
-        "风控状态": "客户端预检",
-        "风控分": 0,
+        "内容哈希": meta.get("content_hash", ""),
+        "客户端版本": meta.get("client_version", CLIENT_VERSION),
+        "风控状态": meta.get("risk_status", "客户端预检"),
+        "风控分": meta.get("risk_score", 0),
         "治理状态": "待治理",
         "原始JSON": json.dumps(payload, ensure_ascii=False),
     }
@@ -176,12 +184,12 @@ def review_fields(payload: dict, meta: dict) -> dict:
 
 def submit_gateway(cfg: dict[str, str], kind: str, payload: dict, meta: dict):
     require(cfg, "FORTIOR_CONTRIBUTION_ENDPOINT")
-    headers = {"X-Fortior-Client-Version": CLIENT_VERSION}
-    if cfg.get("FORTIOR_CONTRIBUTION_TOKEN"):
-        headers["Authorization"] = "Bearer " + cfg["FORTIOR_CONTRIBUTION_TOKEN"]
+    headers = {"X-Fortior-Client-Version": meta.get("client_version", CLIENT_VERSION)}
+    if cfg.get("FORTIOR_CONTRIBUTION_EDIT_CODE"):
+        headers["X-Fortior-Edit-Code"] = cfg["FORTIOR_CONTRIBUTION_EDIT_CODE"]
     return http_json(
         "POST",
-        cfg["FORTIOR_CONTRIBUTION_ENDPOINT"],
+        cfg["FORTIOR_CONTRIBUTION_ENDPOINT"].rstrip("/") + "/v1/contributions",
         {"type": kind, "payload": payload, "client_metadata": meta},
         headers,
     )
@@ -191,8 +199,10 @@ def submit_feishu_direct(cfg: dict[str, str], kind: str, payload: dict, meta: di
     require(cfg, "FEISHU_APP_TOKEN")
     table_key = "FEISHU_EXPERIENCE_TABLE_ID" if kind == "experience" else "FEISHU_REVIEW_POINT_TABLE_ID"
     require(cfg, table_key)
+    direct_meta = dict(meta)
+    direct_meta["identity_status"] = "Owner直写"
     token = feishu_tenant_access_token(cfg)
-    fields = experience_fields(payload, meta) if kind == "experience" else review_fields(payload, meta)
+    fields = experience_fields(payload, direct_meta) if kind == "experience" else review_fields(payload, direct_meta)
     url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{cfg['FEISHU_APP_TOKEN']}/tables/{cfg[table_key]}/records"
     result = http_json("POST", url, {"fields": fields}, {"Authorization": f"Bearer {token}"})
     if result.get("code") != 0:
@@ -208,8 +218,9 @@ def main() -> None:
     args = parser.parse_args()
 
     payload = json.loads(Path(args.file).read_text(encoding="utf-8"))
+    cfg = load_config()
     warnings = validate(payload, args.type)
-    meta = metadata(payload)
+    meta = metadata(payload, cfg)
     print(f"Validation: PASS | content_hash={meta['content_hash']}")
     for warning in warnings:
         print(f"Warning: {warning}")
@@ -218,7 +229,6 @@ def main() -> None:
         print("Submission: DRY RUN")
         return
 
-    cfg = load_config()
     mode = cfg.get("FORTIOR_SUBMIT_MODE", "local_only")
     if mode == "local_only":
         print("Submission: local_only; no remote write performed")

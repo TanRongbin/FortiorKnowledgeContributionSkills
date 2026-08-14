@@ -30,10 +30,7 @@ def number(name: str) -> dict:
 
 
 COMMON_FIELDS = [
-    text("提交ID"),
-    # Client-declared identity: useful for attribution, never sufficient for abuse controls.
-    text("贡献者用户名"), text("显示名"), text("GitHub用户名"),
-    # Server-verified identity: written by the production Contribution Gateway.
+    text("提交ID"), text("贡献者用户名"), text("显示名"), text("GitHub用户名"), text("客户端实例ID"),
     text("身份提供方"), text("已验证用户名"), text("已验证用户ID"),
     select("身份验证状态", ["未验证", "客户端声明", "服务端已验证", "Owner直写"]),
     select("公开范围", ["公开", "匿名公开", "仅治理人员可见"]),
@@ -117,7 +114,6 @@ def ensure_table(app_token: str, token: str, name: str, fields: list[dict], dry_
     for spec in fields:
         fname = spec["field_name"]
         if fname in existing:
-            # Non-destructive by design: do not rewrite existing field options/types.
             continue
         if dry_run:
             print(f"  would add: {fname}")

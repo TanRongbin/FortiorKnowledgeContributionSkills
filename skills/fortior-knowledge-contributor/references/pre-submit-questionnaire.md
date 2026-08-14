@@ -1,39 +1,35 @@
 # Mandatory Pre-Submission Questionnaire
 
-Ask only unanswered items, but every mandatory field below must have an explicit value before remote submission.
+Ask only unanswered items. Prefer one compact grouped question.
 
-Prefer one compact grouped question rather than a long interview.
-
-## Required
-
-### A. Contributor username
+## A. Contributor username — required
 
 Ask:
 
-> 本次贡献记录的用户名是什么？可以使用 GitHub 用户名、公司内部昵称或你希望在治理记录中使用的稳定用户名。
+> 本次贡献记录使用什么用户名？可以是真名、昵称、公司内部昵称或其他稳定名称，不要求 GitHub/飞书账号。
 
 Store as `contributor.username`.
 
-If GitHub CLI or Git config suggests a name, you may offer it as a default, but the user must confirm it.
+Never require the user to create a third-party account.
 
-### B. Contribution type
+## B. Contribution type — required if unclear
 
-If not already explicit, ask the user to choose:
+Choose:
 
 - 工程经验 `engineering_experience`
 - 程序评审点 `review_point`
 
-### C. Visibility
+## C. Visibility — explicit user choice
 
-The user must choose one:
+Choose one:
 
-1. `public` — 内容可在未来公开知识库/Sites 中发布。
-2. `anonymized_public` — 内容可公开，但公开时隐藏/替换个人或项目身份信息。
-3. `private_governance_only` — 只允许治理人员查看，不允许公开发布。
+1. `public` — 可以在未来公开知识库/Sites 发布。
+2. `anonymized_public` — 技术内容可公开，但公开时隐藏或替换个人/项目身份信息。
+3. `private_governance_only` — 只供治理人员查看，不允许公开发布。
 
-Never infer this from repository visibility.
+Never infer this choice from repository visibility.
 
-### D. Attribution when published
+## D. Attribution
 
 Choose one:
 
@@ -41,44 +37,29 @@ Choose one:
 - `display_name`
 - `anonymous`
 
-Even when public attribution is anonymous, internal governance may retain `contributor.username` for abuse handling and provenance.
+## E. Source disclosure
 
-### E. Source disclosure
-
-Ask the user to explicitly allow or deny each:
+Explicitly allow/deny:
 
 - repository name
 - commit id
 - relative file paths
 - minimal code excerpts
 
-Store four booleans. A denied item must be removed or anonymized from any public output.
+## F. Rights / privacy confirmation
 
-### F. Rights / privacy confirmation
-
-Require an explicit confirmation that:
+Require explicit confirmation that:
 
 - the contributor has the right to submit the material;
-- secrets, passwords, tokens, private keys and unnecessary personal/customer information are not included;
-- they understand the selected visibility level.
+- no secret/password/token/private key or unnecessary customer/personal information is included;
+- the selected visibility level is understood.
 
-If the user cannot confirm, save locally only and do not submit remotely.
+If they cannot confirm, save locally only.
 
-### G. Title confirmation
+## G. Title confirmation
 
-Show the AI-proposed title and ask whether to:
+Show the AI-proposed title and ask to keep or edit it.
 
-- keep it; or
-- replace it with user-provided text.
+## Optional, never required
 
-## Recommended when relevant
-
-Ask for applicability/scope when AI cannot reliably infer it, for example:
-
-- MCU / CPU family
-- software module
-- motor/application type
-- protocol
-- frontend/backend/embedded/algorithm/toolchain
-
-Do not fabricate missing scope metadata.
+You may ask for a GitHub username, company, team or contact only if the user wants to provide it. Absence of those values must never block contribution.
