@@ -11,6 +11,7 @@ SKILL_NAME = "fortior-knowledge-contributor"
 ROOT = Path(__file__).resolve().parent
 SOURCE = ROOT / "skills" / SKILL_NAME
 HOME = Path.home()
+RUNTIME = HOME / ".fortior" / "runtime" / SKILL_NAME
 
 TARGETS = {
     "agents": HOME / ".agents" / "skills",
@@ -38,13 +39,21 @@ def detected_targets() -> list[str]:
     return found or ["agents"]
 
 
-def install_to(base: Path) -> Path:
-    dst = base.expanduser().resolve() / SKILL_NAME
+def copy_skill(dst: Path) -> Path:
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists():
         shutil.rmtree(dst)
     shutil.copytree(SOURCE, dst)
     return dst
+
+
+def install_to(base: Path) -> Path:
+    return copy_skill(base.expanduser().resolve() / SKILL_NAME)
+
+
+def install_runtime() -> Path:
+    """Install an agent-independent executable copy used by SKILL.md at submit time."""
+    return copy_skill(RUNTIME)
 
 
 def config_value(path: Path, key: str) -> str:
@@ -118,11 +127,14 @@ def main() -> None:
         bases = [TARGETS[args.target]]
 
     installed = [install_to(base) for base in dict.fromkeys(bases)]
+    runtime = install_runtime()
     config = ensure_local_config()
 
     print("Installed Fortior skill:")
     for path in installed:
         print(f"  - {path}")
+    print(f"Stable runtime: {runtime}")
+    print(f"Submit runtime: {runtime / 'scripts' / 'submit.py'}")
     print(f"Local config: {config}")
     print("No GitHub/Feishu account is required to use the skill.")
 
