@@ -8,6 +8,9 @@
 .contributions/
 contribution.json
 
+# gateway local test data
+gateway/mock-submissions.jsonl
+
 # Python
 __pycache__/
 *.pyc
