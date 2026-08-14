@@ -1,187 +1,160 @@
 # Fortior Knowledge Contribution Skills
 
-Open-source Agent Skills for capturing engineering experience and contributing structured software review knowledge.
+Open-source Agent Skills for turning solved engineering work into reusable **Engineering Experience** and **Review Point** contributions.
 
-本仓库只存放公开、可复用的知识贡献 Skill。任何人都可以下载安装，不要求 GitHub、飞书或其他平台账号。
+本仓库面向两类读者：
 
-知识分成两类：
+- **普通贡献者**：安装 Skill，在 Claude Code / Codex / Gemini CLI / Copilot 等本地 AI 编程环境中，把已经解决的问题整理并提交到 Fortior 待治理知识库。
+- **维护者 / Owner**：维护公网 Gateway、飞书路由、Schema、测试和治理接入。
 
-- **Engineering Experience（工程经验）**：问题如何发生、如何定位、根因、修复、验证与经验教训。
-- **Review Point（程序评审点）**：以后评审其他项目时应该检查什么、如何检查、什么情况判 Fail、正确实践是什么。
+> 普通贡献者不需要 GitHub 登录、飞书账号、飞书 App Secret、Base Token 或 Table ID。安装器默认使用托管公网 Gateway。
 
-Experience 与 Review Point 使用独立 Schema、独立飞书数据表和独立治理流程。
+## 普通贡献者：从这里开始
 
-## 设计原则：开放贡献，不绑定账号
+完整的下载安装、更新、调用、成功判据和常见问题请直接看：
 
-第一版采用 **Open Contribution**：
+**[CONTRIBUTOR_QUICKSTART.md](CONTRIBUTOR_QUICKSTART.md)**
 
-```text
-任何安装 Skill 的用户
-   ↓
-AI 自动总结
-   ↓
-用户填写用户名 + 公开范围等必答项
-   ↓
-本地检查
-   ↓
-Fortior Contribution Gateway（无需登录）
-   ↓
-基础限流 / 去重 / 大小检查
-   ↓
-飞书待治理
-```
-
-**不要求 GitHub 登录。** GitHub、飞书账号或其他身份验证以后只能作为可选增强，不能成为所有用户贡献的前置条件。
-
-## 支持的 AI 编程环境
-
-| 平台 | 用户级安装位置 | 支持 |
-|---|---|---|
-| OpenAI Codex | `~/.agents/skills/` | ✅ |
-| GitHub Copilot / Copilot CLI | `~/.agents/skills/` | ✅ |
-| Claude Code | `~/.claude/skills/` | ✅ |
-| Gemini CLI | `~/.gemini/skills/` | ✅ |
-| 其他 Agent Skills 兼容工具 | 自定义目录 | ✅ |
-
-## 一键安装
+最短安装流程：
 
 ```bash
+git clone https://github.com/TanRongbin/FortiorKnowledgeContributionSkills.git
+cd FortiorKnowledgeContributionSkills
 python install.py --target auto
 ```
 
-安装到所有支持位置：
+如果本机同时使用多个 CLI，推荐：
 
 ```bash
 python install.py --target all
 ```
 
-或指定平台：
+安装完成后彻底关闭并重新启动 AI CLI。
 
-```bash
-python install.py --target codex
-python install.py --target copilot
-python install.py --target claude
-python install.py --target gemini
-```
+## 这个 Skill 贡献什么
 
-每次首次安装会生成一个随机 `FORTIOR_CLIENT_INSTANCE_ID`。它**不是账号，也不是身份认证**，只作为未来重复提交和滥用分析的弱信号。
+### Engineering Experience（工程经验）
 
-## 使用
+记录一个真实问题当时如何发生、如何定位、根因是什么、怎样修复、如何验证以及从中得到什么经验。
 
-解决完一个真实问题后，对本地 AI CLI 说：
+### Review Point（程序评审点）
+
+把已有证据抽象成以后评审其他工程时可复用的检查规则，包括评审问题、检查方法、失败判据、风险、正确实践、验证方式和适用范围。
+
+两者是不同知识实体。一条工程经验可以支持一个或多个评审点，但不会因为提交了一条经验就自动升级成通用评审规则。
+
+## 使用示例
+
+解决完一个真实工程问题后，可以直接对 AI 说：
 
 ```text
-把刚刚解决的问题贡献为工程经验
+把刚刚解决的问题总结成工程经验并贡献。
 ```
 
 或：
 
 ```text
-把这个问题抽象成程序评审点并贡献
+把这个问题抽象成一个可复用的程序评审点并贡献。
 ```
 
-Skill 会优先利用当前对话、`git diff`、Commit、相关源码、日志、测试与用户确认，不要求重新描述一次完整问题。
-
-## 提交前必须人工选择
-
-AI 生成内容后不能立即上传。至少要确认：
-
-1. **贡献者用户名**（不要求是真名，也不要求任何第三方账号）；
-2. 工程经验 / 程序评审点；
-3. 公开范围：`公开` / `匿名公开` / `仅治理人员可见`；
-4. 公开署名：用户名 / 显示名 / 匿名；
-5. 是否允许未来公开仓库名、Commit、文件路径、必要代码摘录；
-6. 是否有权提交且已排除密钥、客户隐私等敏感内容；
-7. AI 建议标题是否保留或修改。
-
-详见 `skills/fortior-knowledge-contributor/references/pre-submit-questionnaire.md`。
-
-## 防垃圾：第一版先轻量，后续可逐步收紧
-
-开放贡献不等于飞书密钥公开。普通用户只知道 Gateway 地址，飞书 App Secret 只保存在服务端。
-
-V1 Gateway 不登录，但至少做：
-
-- 请求大小限制；
-- 必填字段校验；
-- `content_hash` 精确去重；
-- 按 IP / 用户名 / client_instance_id 的轻量限流；
-- 所有记录默认 `待治理`。
-
-未来如果垃圾量变大，可以**不改 Skill 主流程**，只把 Gateway 模式从：
-
-```env
-FORTIOR_GATEWAY_MODE=open
-```
-
-改为：
-
-```env
-FORTIOR_GATEWAY_MODE=edit_code
-```
-
-然后只向允许贡献的人发一个“贡献编辑码”。它不要求 GitHub/飞书账号，也比账号体系更符合当前目标。
-
-## Gateway 参考实现
-
-仓库包含无需登录的参考 Gateway：
+也可以一次要求两种：
 
 ```text
-gateway/app.py
+把刚才的问题同时总结成工程经验和可复用评审点并分别贡献。
 ```
 
-它支持两种后端：
+支持显式 Skill 调用的 CLI 也可以使用 `fortior-knowledge-contributor` 的显式调用方式。
+
+Skill 会优先利用当前会话、Git diff / commit、源码、日志、测试、波形和用户确认，不要求用户重新描述已经存在于上下文中的信息。
+
+## 提交前的人机确认
+
+远程提交前必须让用户明确确认：
+
+- 贡献者用户名与署名方式；
+- 可见范围：公开 / 匿名公开 / 仅治理人员可见；
+- 是否允许披露仓库名、Commit、相对文件路径、最小代码片段；
+- 是否有权提交，且已排除 Secret、Token、私钥及不必要的客户/个人信息；
+- AI 建议标题是否保留或修改。
+
+宿主 CLI 提供结构化单选/多选能力时，Skill 应优先使用选择器，而不是要求用户手工输入整套问卷。
+
+## 当前公共提交链路
 
 ```text
-mock    本地测试，不访问飞书
-feishu  真实写入飞书
+AI coding session
+   ↓
+fortior-knowledge-contributor
+   ↓
+本地结构化与隐私预检
+   ↓
+https://fortior-knowledge-contribution-gateway.onrender.com
+   ↓
+Fortior Contribution Gateway
+   ↓
+飞书待治理数据
+   ├─ Review Point → 现有评审点表
+   └─ Engineering Experience → 工程经验贡献表
 ```
 
-推荐第一次先用 `mock`。
+提交成功只表示 **进入待治理数据**，不代表已经成为 FortiorReviewPoints 正式规则。
 
-### 5 分钟本地测试
-
-```bash
-python -m pip install -r gateway/requirements.txt
-python gateway/test_gateway.py
-```
-
-预期：
+公网 Gateway 当前提供：
 
 ```text
-Gateway mock tests: PASS
+GET /health   进程健康状态
+GET /ready    Gateway → 飞书认证与两张目标表可用性检查
+POST /v1/contributions
 ```
 
-完整的 **Skill → Gateway mock → 飞书直写 → Gateway → 飞书 → 真实 AI Skill** 测试步骤见：
+Render Free 空闲后可能冷启动，因此首次提交有时会比平时慢几十秒。
+
+## 支持的安装位置
+
+| 平台 | 用户级 Skill 目录 |
+|---|---|
+| OpenAI Codex | `~/.agents/skills/fortior-knowledge-contributor` |
+| GitHub Copilot / Copilot CLI | `~/.agents/skills/fortior-knowledge-contributor` |
+| Claude Code | `~/.claude/skills/fortior-knowledge-contributor` |
+| Gemini CLI | `~/.gemini/skills/fortior-knowledge-contributor` |
+| 其他 Agent Skills 兼容工具 | `install.py --target custom --path ...` |
+
+独立提交 runtime 安装到：
 
 ```text
-TESTING.md
+~/.fortior/runtime/fortior-knowledge-contributor
 ```
 
-## 公网 Gateway（Render）
+普通用户配置保存在：
 
-仓库根目录的 `render.yaml` 可直接部署公开 HTTPS Gateway。飞书密钥只填写在 Render 服务端环境变量中，不提交到 GitHub。
+```text
+~/.fortior/knowledge-contributor.env
+```
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/TanRongbin/FortiorKnowledgeContributionSkills)
+默认模式为 `gateway`，默认公网地址已由安装器配置，不需要普通贡献者手工填写飞书信息。
 
-部署时填写：
+## 维护者文档
 
-- `FEISHU_APP_ID`
-- `FEISHU_APP_SECRET`
-- `FEISHU_APP_TOKEN`
-- `FEISHU_EXPERIENCE_TABLE_ID`
-- `FEISHU_REVIEW_POINT_TABLE_ID`
+普通贡献者不需要运行 Gateway、mock、飞书建表或 Render 部署命令。维护工作请看：
 
-部署完成后访问 `/health`，应返回 `sink=feishu`。把公网 Gateway 根地址配置到贡献者端的 `FORTIOR_CONTRIBUTION_ENDPOINT` 即可。
+- [TESTING.md](TESTING.md) — 维护者测试与故障定位
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 知识与提交流程架构
+- [docs/SECURITY_AND_ANTI_SPAM.md](docs/SECURITY_AND_ANTI_SPAM.md) — 当前安全边界和后续增强
+- [gateway/README.md](gateway/README.md) — Gateway 本地开发与部署说明
 
-## 飞书
+仓库根目录中的 `submit.py`、`setup_feishu_base.py`、`bootstrap_feishu.py`、`inspect_feishu.py`、`quick_test.py`、`view_mock.py` 属于维护/测试辅助工具，不是普通贡献者安装 Skill 的必需步骤。
 
-`bootstrap_feishu.py` 会非破坏性创建/补齐：
+## Repository layout
 
-- `工程经验贡献`
-- `评审点贡献`
-
-两张表都会保存贡献者用户名、公开权限、client instance、内容哈希、风控状态和治理状态。
+```text
+skills/fortior-knowledge-contributor/  Skill、Schema、运行脚本与参考规则
+gateway/                               公网 Contribution Gateway 与测试
+docs/                                  架构和安全说明
+install.py                             跨 CLI 安装/更新入口
+render.yaml                            托管 Gateway 的 Render Blueprint
+CONTRIBUTOR_QUICKSTART.md              普通贡献者上手说明
+TESTING.md                             维护者测试说明
+```
 
 ## License
 
