@@ -4,12 +4,14 @@ import hashlib
 import json
 import os
 import sys
+import threading
 import time
 import uuid
 from collections import defaultdict, deque
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_DIR = ROOT / "skills" / "fortior-knowledge-contributor" / "scripts"
@@ -18,7 +20,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from common import feishu_tenant_access_token, http_json, load_config  # noqa: E402
 from submit import experience_fields, review_fields  # noqa: E402
 
-app = FastAPI(title="Fortior Contribution Gateway", version="0.3.2")
+app = FastAPI(title="Fortior Contribution Gateway", version="0.3.6")
 
 MAX_BYTES = int(os.environ.get("FORTIOR_GATEWAY_MAX_BYTES", str(128 * 1024)))
 RATE_PER_HOUR = int(os.environ.get("FORTIOR_GATEWAY_RATE_LIMIT_PER_HOUR", "30"))
@@ -35,14 +37,15 @@ MOCK_LOG = Path(
 RATE_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
 SEEN_HASHES: dict[str, float] = {}
 DEDUPE_TTL = 24 * 3600
+FEISHU_WRITE_LOCKS = {
+    "experience": threading.Lock(),
+    "review_point": threading.Lock(),
+}
+FEISHU_RETRY_CODES = {1254290, 1254291}
 
 
 def cfg() -> dict[str, str]:
-    """Load process env plus ~/.fortior/knowledge-contributor.env for local owner testing.
-
-    Environment variables still win over values from the local config file, so cloud
-    deployments can inject secrets normally without relying on a home-directory file.
-    """
+    """Load process env plus ~/.fortior/knowledge-contributor.env for local owner testing."""
     return load_config()
 
 
@@ -98,22 +101,71 @@ def validate_payload(kind: str, payload: dict) -> None:
         raise HTTPException(400, "Mandatory submission preferences are incomplete")
 
 
+def _feishu_required_config(conf: dict[str, str], kind: str | None = None) -> list[str]:
+    required = ["FEISHU_APP_ID", "FEISHU_APP_SECRET", "FEISHU_APP_TOKEN"]
+    if kind == "experience":
+        required.append("FEISHU_EXPERIENCE_TABLE_ID")
+    elif kind == "review_point":
+        required.append("FEISHU_REVIEW_POINT_TABLE_ID")
+    else:
+        required.extend(["FEISHU_EXPERIENCE_TABLE_ID", "FEISHU_REVIEW_POINT_TABLE_ID"])
+    return [key for key in required if not conf.get(key)]
+
+
+def _feishu_table_probe(conf: dict[str, str], token: str, table_id: str) -> None:
+    url = (
+        f"https://open.feishu.cn/open-apis/bitable/v1/apps/{conf['FEISHU_APP_TOKEN']}"
+        f"/tables/{table_id}/fields?page_size=1"
+    )
+    result = http_json("GET", url, headers={"Authorization": f"Bearer {token}"}, timeout=30)
+    if result.get("code") != 0:
+        raise RuntimeError(f"Feishu table probe failed: code={result.get('code')} msg={result.get('msg', 'unknown')}")
+
+
 def write_feishu(kind: str, payload: dict, meta: dict) -> dict:
     conf = cfg()
-    required = ["FEISHU_APP_ID", "FEISHU_APP_SECRET", "FEISHU_APP_TOKEN"]
-    table_key = "FEISHU_EXPERIENCE_TABLE_ID" if kind == "experience" else "FEISHU_REVIEW_POINT_TABLE_ID"
-    required.append(table_key)
-    missing = [k for k in required if not conf.get(k)]
+    missing = _feishu_required_config(conf, kind)
     if missing:
         raise HTTPException(503, "Gateway Feishu configuration incomplete: " + ", ".join(missing))
 
-    token = feishu_tenant_access_token(conf)
+    try:
+        token = feishu_tenant_access_token(conf)
+    except Exception as exc:
+        raise HTTPException(502, f"Feishu authentication failed: {exc}") from exc
+
+    table_key = "FEISHU_EXPERIENCE_TABLE_ID" if kind == "experience" else "FEISHU_REVIEW_POINT_TABLE_ID"
     fields = experience_fields(payload, meta) if kind == "experience" else review_fields(payload, meta)
     url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{conf['FEISHU_APP_TOKEN']}/tables/{conf[table_key]}/records"
-    result = http_json("POST", url, {"fields": fields}, {"Authorization": f"Bearer {token}"})
-    if result.get("code") != 0:
-        raise HTTPException(502, f"Feishu create record failed: {result.get('msg', 'unknown')}")
-    return result
+
+    # One lock per target table prevents simultaneous writes from this process. Feishu
+    # documents write conflicts for concurrent writes to the same Bitable table.
+    with FEISHU_WRITE_LOCKS[kind]:
+        last_error: Exception | None = None
+        for attempt in range(4):
+            if attempt:
+                time.sleep(0.5 * (2 ** (attempt - 1)))
+            try:
+                result = http_json(
+                    "POST",
+                    url,
+                    {"fields": fields},
+                    {"Authorization": f"Bearer {token}"},
+                    timeout=30,
+                )
+            except Exception as exc:
+                last_error = exc
+                if attempt < 3:
+                    continue
+                raise HTTPException(502, f"Feishu request failed after retries: {exc}") from exc
+
+            code = result.get("code")
+            if code == 0:
+                return result
+            if code in FEISHU_RETRY_CODES and attempt < 3:
+                continue
+            raise HTTPException(502, f"Feishu create record failed: code={code} msg={result.get('msg', 'unknown')}")
+
+        raise HTTPException(502, f"Feishu request failed after retries: {last_error}")
 
 
 def write_mock(kind: str, payload: dict, meta: dict) -> dict:
@@ -139,9 +191,56 @@ def write_sink(kind: str, payload: dict, meta: dict) -> dict:
     raise HTTPException(503, "Unsupported gateway sink; use mock or feishu")
 
 
+@app.get("/")
+def root():
+    return {
+        "service": "Fortior Contribution Gateway",
+        "version": app.version,
+        "health": "/health",
+        "ready": "/ready",
+    }
+
+
 @app.get("/health")
 def health():
-    return {"ok": True, "mode": MODE, "sink": SINK}
+    return {"ok": True, "mode": MODE, "sink": SINK, "version": app.version}
+
+
+@app.get("/ready")
+def ready():
+    if SINK != "feishu":
+        return {"ok": True, "sink": SINK, "stage": "non_feishu_sink"}
+
+    conf = cfg()
+    missing = _feishu_required_config(conf)
+    if missing:
+        return JSONResponse(
+            status_code=503,
+            content={"ok": False, "sink": SINK, "stage": "config", "missing": missing},
+        )
+
+    try:
+        token = feishu_tenant_access_token(conf)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"ok": False, "sink": SINK, "stage": "auth", "error": str(exc)},
+        )
+
+    probes = [
+        ("experience_table", conf["FEISHU_EXPERIENCE_TABLE_ID"]),
+        ("review_point_table", conf["FEISHU_REVIEW_POINT_TABLE_ID"]),
+    ]
+    for stage, table_id in probes:
+        try:
+            _feishu_table_probe(conf, token, table_id)
+        except Exception as exc:
+            return JSONResponse(
+                status_code=503,
+                content={"ok": False, "sink": SINK, "stage": stage, "error": str(exc)},
+            )
+
+    return {"ok": True, "sink": SINK, "stage": "ready", "version": app.version}
 
 
 @app.post("/v1/contributions")
