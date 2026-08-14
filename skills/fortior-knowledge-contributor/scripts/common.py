@@ -61,7 +61,12 @@ def require(cfg: dict[str, str], *keys: str) -> None:
         raise RuntimeError("Missing configuration: " + ", ".join(missing))
 
 
-def http_json(method: str, url: str, payload=None, headers=None, timeout: int = 30):
+def http_json(method: str, url: str, payload=None, headers=None, timeout: int = 90):
+    """Small JSON HTTP helper.
+
+    The 90-second default deliberately tolerates cold starts on free public gateway hosts
+    while remaining bounded for Feishu and other API calls.
+    """
     final_headers = {"Content-Type": "application/json; charset=utf-8"}
     if headers:
         final_headers.update(headers)
