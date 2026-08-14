@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: fortior-knowledge-contribution-gateway
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: python -m pip install -r gateway/requirements.txt
+    startCommand: python -m uvicorn gateway.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    renderSubdomainPolicy: enabled
+    envVars:
+      - key: FORTIOR_GATEWAY_MODE
+        value: open
+      - key: FORTIOR_GATEWAY_SINK
+        value: feishu
+      - key: FORTIOR_GATEWAY_RATE_LIMIT_PER_HOUR
+        value: "30"
+      - key: FORTIOR_GATEWAY_MAX_BYTES
+        value: "131072"
+      - key: FEISHU_APP_ID
+        sync: false
+      - key: FEISHU_APP_SECRET
+        sync: false
+      - key: FEISHU_APP_TOKEN
+        sync: false
+      - key: FEISHU_EXPERIENCE_TABLE_ID
+        sync: false
+      - key: FEISHU_REVIEW_POINT_TABLE_ID
+        sync: false
