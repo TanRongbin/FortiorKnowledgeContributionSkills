@@ -27,5 +27,13 @@ jobs:
         run: python submit.py --type review_point --file skills/fortior-knowledge-contributor/examples/review-point-example.json --dry-run
       - name: Validate review point Feishu mapping
         run: python gateway/test_review_mapping.py
+      - name: Validate stable installed runtime
+        run: |
+          python install.py --target custom --path "$RUNNER_TEMP/fortior-skills"
+          test -f "$HOME/.fortior/runtime/fortior-knowledge-contributor/scripts/submit.py"
+          python "$HOME/.fortior/runtime/fortior-knowledge-contributor/scripts/submit.py" \
+            --type experience \
+            --file "$GITHUB_WORKSPACE/skills/fortior-knowledge-contributor/examples/experience-example.json" \
+            --dry-run
       - name: Run gateway mock integration test
         run: python gateway/test_gateway.py
