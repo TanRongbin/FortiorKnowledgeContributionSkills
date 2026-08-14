@@ -7,7 +7,7 @@ services:
     buildCommand: python -m pip install -r gateway/requirements.txt
     startCommand: python -m uvicorn app:app --app-dir gateway --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
-    autoDeployTrigger: checksPass
+    autoDeployTrigger: commit
     renderSubdomainPolicy: enabled
     envVars:
       - key: FORTIOR_GATEWAY_MODE
