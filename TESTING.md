@@ -1,10 +1,12 @@
-# Testing Guide
+# Maintainer Testing Guide
 
-本仓库把测试分成三层。建议严格按顺序执行，这样出错时能快速定位是哪一层。
+> 本文档面向仓库维护者 / Owner。普通贡献者请使用 [CONTRIBUTOR_QUICKSTART.md](CONTRIBUTOR_QUICKSTART.md)，不需要运行 mock Gateway、配置飞书或执行建表脚本。
 
-## Layer 1 — Skill / JSON 本地校验
+维护测试分为四层。按层排查可以快速判断问题发生在本地结构化、Gateway、飞书还是 Agent Skill 执行层。
 
-无需 Gateway、无需飞书。
+## Layer 1 — 本地 Schema / 提交脚本
+
+无需 Gateway、无需飞书：
 
 ```bash
 python submit.py --type experience --file skills/fortior-knowledge-contributor/examples/experience-example.json --dry-run
@@ -18,19 +20,20 @@ Validation: PASS
 Submission: DRY RUN
 ```
 
-如果这里失败，问题在 Schema/字段/本地提交脚本，与网络和飞书无关。
+如果这里失败，问题在 payload / Schema / 本地提交脚本，与公网网络和飞书无关。
 
-## Layer 2 — Gateway Mock 全链路
-
-这一层会真正走 HTTP，但不会访问飞书。贡献会写入本机 `gateway/mock-submissions.jsonl`。
-
-### 2.1 安装依赖
+也可以运行本地 smoke test：
 
 ```bash
 python -m pip install -r gateway/requirements.txt
+python quick_test.py
 ```
 
-### 2.2 启动 Mock Gateway
+## Layer 2 — Gateway Mock
+
+Mock 会真正走 HTTP，但不会访问飞书。
+
+### 启动
 
 Windows PowerShell：
 
@@ -48,69 +51,19 @@ export FORTIOR_GATEWAY_SINK=mock
 python -m uvicorn gateway.app:app --host 127.0.0.1 --port 8080
 ```
 
-另开终端：
+检查：
 
 ```bash
 curl http://127.0.0.1:8080/health
 ```
 
-预期：
+预期包含：
 
 ```json
 {"ok":true,"mode":"open","sink":"mock"}
 ```
 
-### 2.3 配置 Skill 走 Gateway
-
-编辑：
-
-```text
-~/.fortior/knowledge-contributor.env
-```
-
-Windows 通常是：
-
-```text
-C:\Users\<用户名>\.fortior\knowledge-contributor.env
-```
-
-写入：
-
-```env
-FORTIOR_SUBMIT_MODE=gateway
-FORTIOR_CONTRIBUTION_ENDPOINT=http://127.0.0.1:8080
-```
-
-### 2.4 提交示例经验
-
-```bash
-python submit.py --type experience --file skills/fortior-knowledge-contributor/examples/experience-example.json
-```
-
-预期包含：
-
-```text
-Submission: PASS
-"record_id": "mock-..."
-```
-
-然后查看：
-
-```text
-gateway/mock-submissions.jsonl
-```
-
-应该出现一行完整贡献。
-
-再次执行完全相同命令，预期：
-
-```json
-"duplicate": true
-```
-
-用于验证去重。
-
-### 2.5 自动测试 Gateway
+自动集成测试：
 
 ```bash
 python gateway/test_gateway.py
@@ -122,153 +75,169 @@ python gateway/test_gateway.py
 Gateway mock tests: PASS
 ```
 
-## Layer 3 — 真实飞书
+Mock 记录位于 `gateway/mock-submissions.jsonl`，该文件已 gitignore。需要查看时可运行：
 
-只有 Layer 1、2 都通过后再做。
+```bash
+python view_mock.py --last 5
+```
 
-### 3.1 准备飞书应用
+## Layer 3 — 飞书与托管 Gateway
 
-需要一个你自己控制的飞书自建应用，并给它多维表格所需的读取/写入权限，同时确保该应用能够访问目标多维表格。
+### 3.1 Owner 本地飞书配置
 
-不要把 App Secret 写入 GitHub。
+真实飞书凭据只放在 Owner 本地配置或托管 Gateway 的 Secret 环境变量中，永远不要提交到 GitHub：
 
-### 3.2 配置 Owner 本地环境
+```text
+~/.fortior/knowledge-contributor.env
+```
 
-在 `~/.fortior/knowledge-contributor.env` 中填写：
+需要：
 
 ```env
 FEISHU_APP_ID=...
 FEISHU_APP_SECRET=...
 FEISHU_APP_TOKEN=...
-FEISHU_EXPERIENCE_TABLE_NAME=工程经验贡献
-FEISHU_REVIEW_POINT_TABLE_NAME=评审点贡献
+FEISHU_EXPERIENCE_TABLE_ID=...
+FEISHU_REVIEW_POINT_TABLE_ID=...
 ```
 
-### 3.3 初始化/补齐飞书表
+### 3.2 现有 Review Point 表 + 新 Engineering Experience 表
+
+当前生产结构是 **同一个 Feishu Base 内两张表**：
+
+```text
+现有 Review Point 表         保留其已有字段和语义
+工程经验贡献表               由本仓库创建/补齐
+```
+
+如果已有 Review Point 表，使用：
 
 ```bash
-python bootstrap_feishu.py
+python setup_feishu_base.py --base-url "https://<tenant>.feishu.cn/base/<app_token>?table=<existing_review_table_id>"
 ```
 
-脚本会非破坏性地：
+这个脚本会把现有 Review Point 表作为只读路由目标，只创建或补齐 `工程经验贡献` 表。
 
-- 复用已有的 `工程经验贡献` / `评审点贡献`；
-- 缺表则创建；
-- 已有字段不删不改；
-- 缺失字段自动增加；
-- 最后输出两个 `table_id`。
+**不要**为了当前生产 Base 对现有 Review Point 表运行 generic `bootstrap_feishu.py --only review_point`。generic bootstrap 只适合全新、隔离的测试 Base 或未来明确批准的迁移场景。
 
-把输出填回本地配置：
+需要查看真实字段时：
 
-```env
-FEISHU_EXPERIENCE_TABLE_ID=tbl...
-FEISHU_REVIEW_POINT_TABLE_ID=tbl...
+```bash
+python inspect_feishu.py --table-id <table_id>
 ```
 
-### 3.4 先测试 Owner 直写
+### 3.3 Owner 直写验证
 
-临时设置：
+仅维护者可以临时使用：
 
-```env
+```text
 FORTIOR_SUBMIT_MODE=feishu_direct
 ```
 
-执行：
+然后分别运行：
 
 ```bash
 python submit.py --type experience --file skills/fortior-knowledge-contributor/examples/experience-example.json
-```
-
-然后在飞书 `工程经验贡献` 表里确认新增一行。
-
-再测试：
-
-```bash
 python submit.py --type review_point --file skills/fortior-knowledge-contributor/examples/review-point-example.json
 ```
 
-确认 `评审点贡献` 新增一行。
-
-### 3.5 最终测试 Gateway → 飞书
-
-Gateway 终端设置：
-
-```env
-FORTIOR_GATEWAY_MODE=open
-FORTIOR_GATEWAY_SINK=feishu
-FEISHU_APP_ID=...
-FEISHU_APP_SECRET=...
-FEISHU_APP_TOKEN=...
-FEISHU_EXPERIENCE_TABLE_ID=tbl...
-FEISHU_REVIEW_POINT_TABLE_ID=tbl...
-```
-
-启动：
-
-```bash
-python -m uvicorn gateway.app:app --host 127.0.0.1 --port 8080
-```
-
-客户端配置：
-
-```env
-FORTIOR_SUBMIT_MODE=gateway
-FORTIOR_CONTRIBUTION_ENDPOINT=http://127.0.0.1:8080
-```
-
-再次执行经验提交。此时应通过 Gateway 写入真实飞书。
-
-## Layer 4 — 真实 Skill 交互测试
-
-完成安装：
-
-```bash
-python install.py --target auto
-```
-
-重新启动你的 AI CLI。在一个真实工程中解决一个小问题后，对 AI 说：
+两条都必须出现：
 
 ```text
-把刚刚解决的问题贡献为工程经验
+Validation: PASS
+Submission: PASS
 ```
 
-预期流程：
+并分别进入对应飞书表。
 
-1. AI 利用当前上下文和 git diff 总结问题；
-2. AI 给出拟定标题；
-3. AI 询问用户名；
-4. AI 询问公开/匿名公开/仅治理可见；
-5. AI 询问是否公开仓库、Commit、文件路径、代码摘录；
-6. AI 要求权利/敏感信息确认；
-7. AI 展示最终预览；
-8. 用户确认后提交；
-9. AI 返回 submission_id / record_id。
+### 3.4 托管公网 Gateway
 
-建议第一次真实测试选择：
+当前公开入口：
 
 ```text
-用户名：Terry-Test
-公开范围：仅治理人员可见
-署名：用户名
-仓库名：不公开
-Commit：不公开
-文件路径：不公开
-代码摘录：不公开
-权利确认：确认
+https://fortior-knowledge-contribution-gateway.onrender.com
 ```
 
-这样即使测试记录进入飞书，也不会被误当成准备公开的知识。
+进程健康检查：
 
-## 最小验收标准
+```bash
+curl https://fortior-knowledge-contribution-gateway.onrender.com/health
+```
 
-一条 Experience 测试至少应验证：
+预期：
 
-- 用户名出现在飞书；
-- 标题正确；
-- 问题/根因/方案/验证结果正确；
-- 公开范围正确；
-- 四个公开权限布尔值正确；
-- 治理状态为 `待治理`；
-- 内容哈希存在；
-- 相同内容重复提交不会重复写入；
-- 不要求 GitHub / 飞书登录。
+```json
+{"ok":true,"mode":"open","sink":"feishu","version":"0.3.6"}
+```
+
+飞书 readiness：
+
+```bash
+curl https://fortior-knowledge-contribution-gateway.onrender.com/ready
+```
+
+真正可提交时必须是：
+
+```json
+{"ok":true,"sink":"feishu","stage":"ready","version":"0.3.6"}
+```
+
+如果 `/health` 正常而 `/ready` 失败，按返回的 `stage` 排查：
+
+```text
+config              缺少托管环境变量
+auth                App ID / App Secret 无法认证
+experience_table    工程经验表不可访问
+review_point_table  评审点表不可访问
+```
+
+### 3.5 多人写入
+
+Gateway 对同一目标表使用进程内写锁，并对飞书瞬时网络错误、`1254290` 和 `1254291` 做退避重试。当前 Render Free 是单实例方案；如果未来扩展到多实例，需要把排队、限流和幂等状态迁移到共享持久化存储。
+
+## Layer 4 — 真实 Agent Skill 验收
+
+安装最新版本：
+
+```bash
+python install.py --target all
+```
+
+彻底关闭并重启 AI CLI，然后在真实工程会话中测试：
+
+```text
+把刚刚解决的问题同时总结成工程经验和可复用评审点并分别贡献。
+```
+
+验收点：
+
+1. Skill 能读取当前上下文和真实工程证据，不要求重复描述已有内容；
+2. 宿主支持结构化问答时，必答项以单选/多选交互出现；
+3. 用户明确选择用户名、署名、可见范围和披露边界；
+4. AI 展示提交预览；
+5. Windows 沙箱环境下能定位真实用户目录中的稳定 runtime；
+6. payload 通过临时 JSON 文件提交，不使用超长 here-document；
+7. Experience 和 Review Point 分别调用 runtime；
+8. 两条都返回真实远程结果：
+
+```text
+Validation: PASS
+Submission: PASS
+sink: feishu
+record_id: rec...
+```
+
+9. 飞书两张目标表分别出现对应记录；
+10. `Submission: PASS` 只解释为进入待治理数据，不宣称已成为正式规则。
+
+## CI
+
+GitHub Actions `.github/workflows/validate.yml` 当前负责：
+
+- Python 编译检查；
+- 两种示例 payload dry-run；
+- Review Point → 飞书字段映射回归；
+- stable runtime 安装/执行；
+- Gateway mock 集成测试。
+
+CI 不持有生产飞书 Secret，因此不会在 GitHub Actions 中写生产飞书。
