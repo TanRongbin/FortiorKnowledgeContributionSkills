@@ -150,26 +150,57 @@ If the user only asked to summarize, stop at local draft.
 
 Do **not** search the current Agent tool list for a dedicated `Fortior Contribution Gateway` tool and do **not** conclude that submission is unavailable merely because no such tool is listed.
 
-The installer provides a stable local runtime at:
+The installer provides a stable local runtime under the user's real OS home directory:
 
 ```text
-~/.fortior/runtime/fortior-knowledge-contributor/scripts/submit.py
+.fortior/runtime/fortior-knowledge-contributor/scripts/submit.py
 ```
 
-Submission procedure:
+### Resolve the real user home first
 
-1. Serialize each approved contribution to a temporary UTF-8 JSON file. The submit runtime also accepts UTF-8 BOM files.
-2. Execute the bundled runtime with the local shell/process tool that is already available to the Agent:
+Some Agent sandboxes rewrite `$HOME` or `~` to an isolated sandbox directory. Do not assume that shell `$HOME` is the installation home.
+
+On Windows, prefer the real Windows user profile from `USERPROFILE` or the platform API. Examples:
+
+```powershell
+$profile = [Environment]::GetFolderPath('UserProfile')
+$runtime = Join-Path $profile '.fortior\runtime\fortior-knowledge-contributor\scripts\submit.py'
+```
+
+or, when using a POSIX-like shell hosted on Windows, read `%USERPROFILE%` / the Windows user profile before falling back to `$HOME`.
+
+On macOS/Linux, use the real account home returned by the OS/Python (`Path.home()`), not a sandbox-rewritten convenience variable when they differ.
+
+Before submission, verify the resolved runtime path exists. If it does not, fall back to the loaded Skill's own `scripts/submit.py`. Known personal Skill locations include `~/.agents/skills/fortior-knowledge-contributor`, `~/.claude/skills/fortior-knowledge-contributor`, and `~/.gemini/skills/fortior-knowledge-contributor`.
+
+### Stage payloads as files, never giant shell literals
+
+For each approved contribution, serialize the payload to a temporary UTF-8 JSON **file using the Agent's file-writing capability or a short local helper script**.
+
+Do **not** embed the full JSON payload in a single shell command, here-document, command-line argument, or giant quoted literal. Large payloads may be truncated by the host CLI/sandbox and can create ambiguous partial execution.
+
+Use two separate temporary files when both outputs are approved, for example:
 
 ```text
-python ~/.fortior/runtime/fortior-knowledge-contributor/scripts/submit.py --type experience --file <payload.json>
-python ~/.fortior/runtime/fortior-knowledge-contributor/scripts/submit.py --type review_point --file <payload.json>
+<temp>/fortior_experience.json
+<temp>/fortior_review_point.json
 ```
 
-On Windows, expand `~`/`$HOME` to the user's home directory as needed. If `python` is unavailable, use the platform's configured Python launcher.
+Then execute short submit commands only:
 
-3. The runtime itself loads `~/.fortior/knowledge-contributor.env` and decides whether to use `gateway`, `feishu_direct`, or `local_only`. Do not ask the user to restate a Gateway endpoint that is already present in that config.
-4. If the stable runtime path is missing, fall back to the loaded Skill's own `scripts/submit.py`. Known personal Skill locations include `~/.agents/skills/fortior-knowledge-contributor`, `~/.claude/skills/fortior-knowledge-contributor`, and `~/.gemini/skills/fortior-knowledge-contributor`.
+```text
+python <resolved-submit.py> --type experience --file <temp>/fortior_experience.json
+python <resolved-submit.py> --type review_point --file <temp>/fortior_review_point.json
+```
+
+The submit runtime accepts UTF-8 and UTF-8 BOM files.
+
+### Submission procedure
+
+1. Resolve and verify the real runtime path as above.
+2. Write each approved contribution to its own temporary JSON file without placing the JSON itself on the shell command line.
+3. Execute the short submit command for each payload.
+4. The runtime itself loads the user's `.fortior/knowledge-contributor.env` and decides whether to use `gateway`, `feishu_direct`, or `local_only`. Do not ask the user to restate a Gateway endpoint already present in that config.
 5. Report the submit runtime's real result. Only say submission succeeded when it returns `Submission: PASS`. Preserve and surface the exact configuration/network/server error when it fails.
 6. Remove temporary payload files after submission unless they are intentionally retained as a local draft.
 
