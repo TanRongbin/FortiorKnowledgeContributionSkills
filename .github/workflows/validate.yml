@@ -20,10 +20,12 @@ jobs:
           python -m py_compile skills/fortior-knowledge-contributor/scripts/common.py
           python -m py_compile skills/fortior-knowledge-contributor/scripts/submit.py
           python -m py_compile skills/fortior-knowledge-contributor/scripts/bootstrap_feishu.py
-          python -m py_compile gateway/app.py gateway/test_gateway.py
+          python -m py_compile gateway/app.py gateway/test_gateway.py gateway/test_review_mapping.py
       - name: Validate experience example
         run: python submit.py --type experience --file skills/fortior-knowledge-contributor/examples/experience-example.json --dry-run
       - name: Validate review point example
         run: python submit.py --type review_point --file skills/fortior-knowledge-contributor/examples/review-point-example.json --dry-run
+      - name: Validate review point Feishu mapping
+        run: python gateway/test_review_mapping.py
       - name: Run gateway mock integration test
         run: python gateway/test_gateway.py
