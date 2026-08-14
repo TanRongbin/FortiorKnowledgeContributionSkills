@@ -23,7 +23,7 @@ POST /v1/contributions
 只检查 Gateway 进程和当前运行模式：
 
 ```json
-{"ok":true,"mode":"open","sink":"feishu","version":"0.3.6"}
+{"ok":true,"mode":"open","sink":"feishu","version":"<current>"}
 ```
 
 ### `/ready`
@@ -37,10 +37,10 @@ POST /v1/contributions
 正常生产状态：
 
 ```json
-{"ok":true,"sink":"feishu","stage":"ready","version":"0.3.6"}
+{"ok":true,"sink":"feishu","stage":"ready","version":"<current>"}
 ```
 
-如果失败，`stage` 会指出 `config`、`auth`、`experience_table` 或 `review_point_table`。
+`version` 应与当前部署代码一致。如果失败，`stage` 会指出 `config`、`auth`、`experience_table` 或 `review_point_table`。
 
 ## Sinks
 
