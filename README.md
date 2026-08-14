@@ -64,7 +64,7 @@ python install.py --target claude
 python install.py --target gemini
 ```
 
-每次安装会生成一个随机 `FORTIOR_CLIENT_INSTANCE_ID`。它**不是账号，也不是身份认证**，只作为未来重复提交和滥用分析的弱信号。
+每次首次安装会生成一个随机 `FORTIOR_CLIENT_INSTANCE_ID`。它**不是账号，也不是身份认证**，只作为未来重复提交和滥用分析的弱信号。
 
 ## 使用
 
@@ -106,7 +106,6 @@ V1 Gateway 不登录，但至少做：
 - 必填字段校验；
 - `content_hash` 精确去重；
 - 按 IP / 用户名 / client_instance_id 的轻量限流；
-- 高置信密钥模式拦截；
 - 所有记录默认 `待治理`。
 
 未来如果垃圾量变大，可以**不改 Skill 主流程**，只把 Gateway 模式从：
@@ -123,24 +122,41 @@ FORTIOR_GATEWAY_MODE=edit_code
 
 然后只向允许贡献的人发一个“贡献编辑码”。它不要求 GitHub/飞书账号，也比账号体系更符合当前目标。
 
-更进一步还可以增加信誉、验证码、可选身份验证等，但都不是第一版前置条件。
-
 ## Gateway 参考实现
 
-仓库已包含一个无需登录的参考 Gateway：
+仓库包含无需登录的参考 Gateway：
 
 ```text
 gateway/app.py
 ```
 
-本地运行：
+它支持两种后端：
 
-```bash
-pip install -r gateway/requirements.txt
-uvicorn gateway.app:app --host 0.0.0.0 --port 8080
+```text
+mock    本地测试，不访问飞书
+afeishu 真实写入飞书（环境变量值实际使用 feishu）
 ```
 
-生产部署只需把飞书凭据放在 Gateway 的环境变量中，不放进公开 Skill。
+推荐第一次先用 `mock`。
+
+### 5 分钟本地测试
+
+```bash
+python -m pip install -r gateway/requirements.txt
+python gateway/test_gateway.py
+```
+
+预期：
+
+```text
+Gateway mock tests: PASS
+```
+
+完整的 **Skill → Gateway mock → 飞书直写 → Gateway → 飞书 → 真实 AI Skill** 测试步骤见：
+
+```text
+TESTING.md
+```
 
 ## 飞书
 
@@ -149,7 +165,7 @@ uvicorn gateway.app:app --host 0.0.0.0 --port 8080
 - `工程经验贡献`
 - `评审点贡献`
 
-两张表都会保存：贡献者用户名、公开权限、client instance、内容哈希、风控状态和治理状态。
+两张表都会保存贡献者用户名、公开权限、client instance、内容哈希、风控状态和治理状态。
 
 ## License
 
