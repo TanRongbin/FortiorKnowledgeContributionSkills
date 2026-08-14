@@ -47,6 +47,14 @@ def install_to(base: Path) -> Path:
     return dst
 
 
+def config_value(path: Path, key: str) -> str:
+    marker = key + "="
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        if line.startswith(marker):
+            return line[len(marker):].strip()
+    return ""
+
+
 def ensure_local_config() -> Path:
     config_dir = HOME / ".fortior"
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -55,18 +63,35 @@ def ensure_local_config() -> Path:
     if not config.exists():
         shutil.copy2(example, config)
 
-    text = config.read_text(encoding="utf-8")
-    marker = "FORTIOR_CLIENT_INSTANCE_ID="
+    text = config.read_text(encoding="utf-8-sig")
     lines = text.splitlines()
     changed = False
+
+    instance_marker = "FORTIOR_CLIENT_INSTANCE_ID="
     for i, line in enumerate(lines):
-        if line.startswith(marker) and not line[len(marker):].strip():
-            lines[i] = marker + str(uuid.uuid4())
+        if line.startswith(instance_marker) and not line[len(instance_marker):].strip():
+            lines[i] = instance_marker + str(uuid.uuid4())
             changed = True
             break
-    if not any(line.startswith(marker) for line in lines):
-        lines.append(marker + str(uuid.uuid4()))
+    if not any(line.startswith(instance_marker) for line in lines):
+        lines.append(instance_marker + str(uuid.uuid4()))
         changed = True
+
+    version_marker = "FORTIOR_CLIENT_VERSION="
+    desired_version = config_value(example, "FORTIOR_CLIENT_VERSION")
+    if desired_version:
+        version_found = False
+        for i, line in enumerate(lines):
+            if line.startswith(version_marker):
+                version_found = True
+                if line[len(version_marker):].strip() != desired_version:
+                    lines[i] = version_marker + desired_version
+                    changed = True
+                break
+        if not version_found:
+            lines.append(version_marker + desired_version)
+            changed = True
+
     if changed:
         config.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return config
