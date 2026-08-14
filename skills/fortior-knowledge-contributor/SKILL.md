@@ -66,6 +66,27 @@ Review Point preserves:
 
 `review question → inspection → failure criteria → trigger → risk → correct practice → verification → scope → evidence`
 
+### Review Point field-completion pass
+
+Before previewing a `review_point`, perform one explicit completion pass over the current conversation, repository evidence and already-read engineering material. Populate the following optional fields whenever the information is actually supported:
+
+- `problem_category`: one compact, reusable technical category; avoid sentence-length labels.
+- `engineering_series`: applicable Fortior/product series.
+- `project_product`: project/product identifier only when known and disclosure is appropriate.
+- `chip_models`: concrete MCU/SoC/chip model names.
+- `cpu_architectures`: e.g. 8051, RISC-V; use exact evidence rather than guessing from filenames.
+- `program_modules`: affected logical modules such as UART/Communication, FOC, speed loop, protection, bootloader.
+- `runtime_stages`: compile/link, startup, ISR/runtime, steady-state, protection/fault handling, etc., only when supported.
+- `code_symbols`: relevant variables/functions/macros/structures actually seen in evidence.
+- `root_cause_confidence`: use the confidence rules above.
+- `evidence_types`: describe the actual evidence classes used, e.g. source review, Git diff/commit, log, waveform, trace, test, engineering document, user confirmation.
+- `non_applicable_conditions`: explicit exclusions or cases where this review point should not be applied.
+- `sensitive_information_status`: `no_sensitive_info`, `sanitized`, or `restricted` based on the final payload/privacy boundary.
+
+This completion pass is **additive**. Do not remove or shorten the existing Review Point content just to fit these fields. If a field cannot be established from evidence, leave it empty instead of asking unnecessary questions or inventing a value.
+
+When source disclosure is disabled, do not reconstruct a repository/product/file identity merely to fill these fields. Technical metadata already explicitly provided by the user may still be used if it is within the approved publication boundary.
+
 ## Phase 4 — Mandatory user questionnaire
 
 Read `references/pre-submit-questionnaire.md` and ask only unanswered mandatory items.
@@ -98,6 +119,8 @@ Show:
 - verification / evidence
 - source disclosure choices
 - uncertainty
+
+For Review Points, also mention any populated engineering context that materially narrows applicability (series/chip/CPU/module/stage) so the user can catch an incorrect classification before submission.
 
 ## Phase 7 — Submit
 
