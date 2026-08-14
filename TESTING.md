@@ -57,7 +57,7 @@ python -m uvicorn gateway.app:app --host 127.0.0.1 --port 8080
 curl http://127.0.0.1:8080/health
 ```
 
-预期包含：
+预期至少包含：
 
 ```json
 {"ok":true,"mode":"open","sink":"mock"}
@@ -164,11 +164,13 @@ https://fortior-knowledge-contribution-gateway.onrender.com
 curl https://fortior-knowledge-contribution-gateway.onrender.com/health
 ```
 
-预期：
+预期包含：
 
 ```json
-{"ok":true,"mode":"open","sink":"feishu","version":"0.3.6"}
+{"ok":true,"mode":"open","sink":"feishu","version":"<current>"}
 ```
+
+其中 `version` 应与当前部署代码一致，不要求文档写死具体版本号。
 
 飞书 readiness：
 
@@ -176,10 +178,10 @@ curl https://fortior-knowledge-contribution-gateway.onrender.com/health
 curl https://fortior-knowledge-contribution-gateway.onrender.com/ready
 ```
 
-真正可提交时必须是：
+真正可提交时必须包含：
 
 ```json
-{"ok":true,"sink":"feishu","stage":"ready","version":"0.3.6"}
+{"ok":true,"sink":"feishu","stage":"ready","version":"<current>"}
 ```
 
 如果 `/health` 正常而 `/ready` 失败，按返回的 `stage` 排查：
