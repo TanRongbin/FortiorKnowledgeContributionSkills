@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from common import feishu_tenant_access_token, http_json, load_config, require
+from common import feishu_tenant_access_token, http_json, load_config, require, update_config_values
 
 TEXT = 1
 NUMBER = 2
@@ -50,6 +50,8 @@ EXPERIENCE_FIELDS = [
     select("验证状态", ["passed", "partial", "not_verified"]), text("收益"), text("经验教训"), text("适用范围"),
 ] + COMMON_FIELDS
 
+# Review point fields are kept here for a future explicit migration/mapping step.
+# Do not apply them to the user's existing review-point table unless explicitly requested.
 REVIEW_FIELDS = [
     text("评审点标题"), text("简要摘要"), text("领域"), text("评审问题"), text("检查方法"), text("失败判据"),
     text("触发条件"), text("失败现象"), text("根因"), text("风险影响"), text("正确实践"), text("修复建议"),
@@ -179,7 +181,14 @@ def main() -> None:
         rp_id = ensure_table(app_token, token, rp_name, rp_configured_id, REVIEW_FIELDS, args.dry_run)
 
     if not args.dry_run:
-        print("\nWrite/keep these values in ~/.fortior/knowledge-contributor.env:")
+        updates: dict[str, str] = {}
+        if exp_id:
+            updates["FEISHU_EXPERIENCE_TABLE_ID"] = exp_id
+        if rp_id:
+            updates["FEISHU_REVIEW_POINT_TABLE_ID"] = rp_id
+        if updates:
+            path = update_config_values(updates)
+            print(f"\nSaved table routing to: {path}")
         if exp_id:
             print(f"FEISHU_EXPERIENCE_TABLE_ID={exp_id}")
         if rp_id:
