@@ -24,6 +24,8 @@ Prefer storing references and summaries instead of complete files:
 - minimal relevant code excerpt only if user allows it
 - technical explanation of the change
 
+Review metadata such as project/product name, chip model, engineering series, CPU architecture, module name and code symbols can also reveal proprietary context. Populate them from reliable evidence, but do not reconstruct or expose source identity that conflicts with the user's publication/disclosure choices.
+
 ## Never submit
 
 - Feishu App Secret or access tokens
