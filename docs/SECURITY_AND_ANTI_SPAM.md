@@ -1,12 +1,12 @@
 # Submission Security & Anti-Spam
 
-## 目标
+## Goal
 
-Fortior 的贡献入口首先要做到“任何安装 Skill 的人都能用”。因此 **GitHub、飞书或其他账号登录不是 V1 前置条件**。
+Fortior 的 V1 贡献入口首先保证：**任何安装 Skill 的用户都可以贡献，而不要求 GitHub、飞书或企业账号登录。**
 
-公开 GitHub 仓库只让用户获得 Skill 源码，不会让用户得到飞书 App Secret。飞书凭据只放在 Contribution Gateway 服务端。
+公开 GitHub 仓库只提供 Skill 与客户端代码。飞书 App Secret 只保存在托管 Contribution Gateway 服务端，普通贡献者永远不需要获得它。
 
-## V1：Open Contribution
+## Current V1 identity model
 
 默认模式：
 
@@ -14,107 +14,129 @@ Fortior 的贡献入口首先要做到“任何安装 Skill 的人都能用”�
 FORTIOR_GATEWAY_MODE=open
 ```
 
-任何人都可提交，只要求：
+当前没有强身份认证：
 
-- 一个稳定的 `contributor.username`；
-- 完成公开/隐私必答项；
-- 通过本地与服务端字段检查。
+- `contributor.username` 是用户声明的稳定用户名；
+- `client_instance_id` 是安装器生成的随机 UUID；
+- 来源 IP、用户名和 client instance 只能作为弱风控信号；
+- 任何字段都不能被当作实名或已验证身份。
 
-用户名只是贡献记录中的声明身份，不代表实名或已验证身份。
+## Current server-side controls
 
-## V1 仍然可以做的防垃圾
+以下能力已经在 Gateway 服务端实现，而不是只存在于客户端：
 
-这些控制不需要账号：
+### Request size
 
-### 请求大小限制
+Gateway 对总 payload 大小设置上限，当前默认 128 KiB。
 
-限制总 payload 大小、单字段长度、数组元素数量和代码摘录长度。
+### Mandatory payload checks
 
-### 精确去重
+Gateway 会检查：
 
-规范化 payload 后计算 SHA-256 `content_hash`，对短期重复请求直接返回已有结果或拒绝重复写入。
+- contribution type；
+- `contributor.username`；
+- 可见范围 / 署名 / 披露权限等 mandatory submission preferences；
+- `rights_confirmed=true`。
 
-### 轻量限流
+### Short-term exact dedupe
 
-组合以下弱信号：
+Gateway 对规范化 payload 计算 SHA-256 `content_hash`，在当前进程内对短期完全重复内容抑制重复写入。
 
-- 来源 IP（服务端短期使用，不需要写入飞书明文）；
+### Lightweight rate limit
+
+当前按弱信号组合限流：
+
+- 来源 IP；
 - `contributor.username`；
 - `client_instance_id`。
 
-`client_instance_id` 是安装时生成的随机 UUID，可被用户重置，所以不能作为真实身份，只适合做软限流。
+这些信号都可以被共享、变化或主动重置，因此只适合防误操作和低强度滥用，不是身份安全边界。
 
-### 基础内容拦截
+### Feishu write serialization and retry
 
-阻止：
+当前单进程 Gateway 对 Experience / Review Point 两张目标表分别使用写锁，避免同一进程内对同一表并发写；对飞书瞬时网络异常以及 `1254290` / `1254291` 做有限次数的退避重试。
 
-- 明显私钥；
-- 高置信 API Secret/Token；
-- 超大无意义内容；
-- 高频完全重复提交。
+### Governance isolation
 
-### 治理隔离
+提交成功后只进入飞书待治理数据，不会直接成为 FortiorReviewPoints 正式知识。
 
-所有贡献先写 `待治理`，不会直接进入 FortiorReviewPoints 正式知识。
+## Current client-side protections
 
-## V2：不登录的“编辑能力”限制
+Skill/runtime 还会进行本地隐私和格式预检，例如：
 
-如果开放入口垃圾变多，可以把 Gateway 改成：
+- Schema / required field 检查；
+- payload 大小检查；
+- 高置信私钥 / Token 模式检查；
+- 用户明确选择公开范围和源信息披露边界。
+
+**这些客户端检查不能被当作不可绕过的服务端安全能力。** 开源客户端可以被修改，恶意用户也可以自己构造 HTTP 请求。
+
+## Not implemented as strong server guarantees yet
+
+以下内容目前属于后续增强，不应在文档里描述成已经完全实现：
+
+- 强实名 / GitHub / 飞书 / SSO 身份验证；
+- 持久化跨实例限流；
+- 持久化跨重启幂等和去重；
+- 服务端完整 Secret/DLP 扫描；
+- 每字段长度和数组元素的完整服务端限制；
+- 共享持久化写队列；
+- 用户信誉、封禁名单和审计后台。
+
+## Optional edit-code mode
+
+如果开放入口出现明显垃圾提交，可以在不引入账号系统的情况下把 Gateway 改成：
 
 ```text
 FORTIOR_GATEWAY_MODE=edit_code
 ```
 
-贡献者仍然不需要 GitHub/飞书账号，但必须提供一个贡献编辑码：
+并在服务端配置：
+
+```text
+FORTIOR_GATEWAY_EDIT_CODE=<secret>
+```
+
+客户端提交时使用：
 
 ```text
 X-Fortior-Edit-Code: ...
 ```
 
-可以：
+编辑码可以按团队或个人分配并随时轮换。它仍然不是账号身份，但可以显著降低完全公开入口的滥用概率。
 
-- 一个团队共用一个码；
-- 每个合作团队一个码；
-- 每个人一个码；
-- 随时吊销或轮换。
+## Future optional identity
 
-这比强制 GitHub 登录更符合“任何工具用户都能贡献”的目标。
-
-## V3：可选身份验证
-
-未来可以增加 GitHub、飞书、企业 SSO 等验证，但只能作为：
+未来可以增加 GitHub、飞书或企业 SSO 等验证，用于：
 
 - 提高额度；
-- 提升信誉；
-- 获得快速治理；
-- 提供可信署名。
+- 提升贡献信誉；
+- 提供可信署名；
+- 加速治理；
+- 精细化封禁和审计。
 
-不应成为公共贡献的唯一入口。
+除非治理策略明确改变，否则不应把第三方账号作为公共贡献的唯一入口。
 
-## 建议飞书治理字段
+## Feishu governance metadata
 
-两张贡献表都保存：
+Engineering Experience 表会保存较完整的贡献元数据，包括提交 ID、贡献用户名、公开权限、client instance、内容哈希、客户端版本和治理状态。
 
-- 提交ID
-- 贡献者用户名
-- 显示名
-- 可选第三方用户名
-- 客户端实例ID
-- 身份验证状态
-- 公开范围
-- 公开署名方式
-- 是否允许公开仓库/Commit/路径/代码摘录
-- 权利确认
-- 内容哈希
-- 风控状态
-- 风控分
-- 客户端版本
-- 治理状态
+现有 Review Point 表使用兼容映射：已有业务字段保持不删不改，额外治理/来源信息根据现有表结构写入对应字段或备注，而不是强制迁移成另一套表结构。
 
-## 重要边界
+## Important boundary
 
-客户端 Skill 是开源代码，恶意用户可以修改本地检查。因此：
+```text
+客户端 Skill
+→ 帮助正常用户正确、安全地贡献
 
-- 本地检查主要防误操作；
-- 真正不可绕过的大小限制、去重和限流必须在 Gateway；
-- 飞书 Secret 永远不进入普通贡献者客户端。
+Gateway
+→ 当前不可绕过的服务端入口控制
+
+Feishu
+→ 待治理数据存储
+
+Owner / expert governance
+→ 决定是否采纳、补充、拒绝、合并或发布
+```
+
+飞书 Secret 永远不进入普通贡献者客户端，也不要在 Issue、聊天、截图或测试日志中公开。
