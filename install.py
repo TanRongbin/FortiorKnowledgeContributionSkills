@@ -64,6 +64,18 @@ def config_value(path: Path, key: str) -> str:
     return ""
 
 
+def set_config_line(lines: list[str], key: str, value: str) -> bool:
+    marker = key + "="
+    for i, line in enumerate(lines):
+        if line.startswith(marker):
+            if line[len(marker):].strip() != value:
+                lines[i] = marker + value
+                return True
+            return False
+    lines.append(marker + value)
+    return True
+
+
 def ensure_local_config() -> Path:
     config_dir = HOME / ".fortior"
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -86,20 +98,35 @@ def ensure_local_config() -> Path:
         lines.append(instance_marker + str(uuid.uuid4()))
         changed = True
 
-    version_marker = "FORTIOR_CLIENT_VERSION="
     desired_version = config_value(example, "FORTIOR_CLIENT_VERSION")
     if desired_version:
-        version_found = False
-        for i, line in enumerate(lines):
-            if line.startswith(version_marker):
-                version_found = True
-                if line[len(version_marker):].strip() != desired_version:
-                    lines[i] = version_marker + desired_version
-                    changed = True
-                break
-        if not version_found:
-            lines.append(version_marker + desired_version)
-            changed = True
+        changed = set_config_line(lines, "FORTIOR_CLIENT_VERSION", desired_version) or changed
+
+    desired_mode = config_value(example, "FORTIOR_SUBMIT_MODE")
+    desired_endpoint = config_value(example, "FORTIOR_CONTRIBUTION_ENDPOINT")
+    current_mode = ""
+    current_endpoint = ""
+    for line in lines:
+        if line.startswith("FORTIOR_SUBMIT_MODE="):
+            current_mode = line.split("=", 1)[1].strip()
+        elif line.startswith("FORTIOR_CONTRIBUTION_ENDPOINT="):
+            current_endpoint = line.split("=", 1)[1].strip()
+
+    # Safely migrate old/default installs to the hosted Gateway. Preserve explicit
+    # owner direct-write mode and custom non-local Gateway endpoints.
+    if desired_mode and current_mode in {"", "local_only"}:
+        changed = set_config_line(lines, "FORTIOR_SUBMIT_MODE", desired_mode) or changed
+        current_mode = desired_mode
+
+    endpoint_is_legacy = (
+        not current_endpoint
+        or current_endpoint.startswith("http://127.0.0.1")
+        or current_endpoint.startswith("http://localhost")
+        or current_endpoint.startswith("https://127.0.0.1")
+        or current_endpoint.startswith("https://localhost")
+    )
+    if desired_endpoint and current_mode != "feishu_direct" and endpoint_is_legacy:
+        changed = set_config_line(lines, "FORTIOR_CONTRIBUTION_ENDPOINT", desired_endpoint) or changed
 
     if changed:
         config.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -136,6 +163,7 @@ def main() -> None:
     print(f"Stable runtime: {runtime}")
     print(f"Submit runtime: {runtime / 'scripts' / 'submit.py'}")
     print(f"Local config: {config}")
+    print("Hosted Gateway: https://fortior-knowledge-contribution-gateway.onrender.com")
     print("No GitHub/Feishu account is required to use the skill.")
 
 
