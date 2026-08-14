@@ -91,6 +91,24 @@ When source disclosure is disabled, do not reconstruct a repository/product/file
 
 Read `references/pre-submit-questionnaire.md` and ask only unanswered mandatory items.
 
+### Structured interaction rule — mandatory when supported
+
+If the host Agent/CLI provides a structured question capability such as `AskUserQuestion`, `UserQuestion`, a choice picker, single-select, multi-select, or equivalent interactive prompt, **MUST use that capability for the mandatory questionnaire**.
+
+Do not first print the questionnaire as ordinary prose and wait for the user to type answers when a structured interaction tool is available.
+
+Use the structured interaction as follows:
+
+- free-text input for `contributor.username` or a custom title/display name when required;
+- single-select for attribution, visibility, contribution type when unclear, and title keep/edit confirmation;
+- multi-select or an equivalent compact choice interaction for source-disclosure permissions;
+- a single explicit confirmation choice for rights/privacy confirmation;
+- group multiple compatible questions into one structured interaction when the host supports it, to minimize user turns.
+
+If the host does **not** expose any structured question capability, fall back to one compact text prompt with numbered/clearly labeled choices. This fallback is allowed only because the host lacks the interactive capability, not because prose is easier.
+
+If a structured interaction call fails, retry it once when reasonable; only then fall back to text and state that the CLI interaction capability was unavailable.
+
 Rules:
 
 - `contributor.username` is mandatory.
