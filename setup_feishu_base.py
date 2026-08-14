@@ -70,6 +70,8 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
+    parsed_input = urlparse(args.base_url)
+    base_host = parsed_input.netloc or "fcntoutafc56.feishu.cn"
     app_token, review_table_id = parse_base_url(args.base_url)
 
     # Persist non-secret routing first. App ID/Secret must already exist locally.
@@ -131,10 +133,21 @@ def main() -> None:
 
     ensure_fields_resumable(app_token, exp_id, token, bf.EXPERIENCE_FIELDS)
 
+    # Re-list tables after all writes so the final success message is backed by a fresh read.
+    final_tables = bf.list_tables(app_token, token)
+    if not any(x.get("table_id") == exp_id for x in final_tables):
+        raise RuntimeError(f"Experience table disappeared from Base after setup: {exp_id}")
+
+    review_url = f"https://{base_host}/base/{app_token}?table={review_table_id}"
+    experience_url = f"https://{base_host}/base/{app_token}?table={exp_id}"
+
     print("\nFeishu routing ready:")
     print(f"  review_point -> {review_table_id}")
     print(f"  engineering_experience -> {exp_id}")
     print(f"Saved to: {path}")
+    print("\nDirect table URLs (use these if the Feishu sidebar has not refreshed yet):")
+    print(f"  review_point: {review_url}")
+    print(f"  engineering_experience: {experience_url}")
     print("Next: test an experience submission, then test the existing review-point table adapter.")
 
 
