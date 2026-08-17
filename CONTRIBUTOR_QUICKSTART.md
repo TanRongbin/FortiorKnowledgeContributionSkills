@@ -31,14 +31,40 @@ https://fortior-knowledge-contribution-gateway.onrender.com
 python --version
 ```
 
-## 2. 下载仓库
+## 2. 下载或更新仓库
+
+### 第一次下载
 
 ```bash
 git clone https://github.com/TanRongbin/FortiorKnowledgeContributionSkills.git
 cd FortiorKnowledgeContributionSkills
 ```
 
-如果已经下载过仓库，直接进入目录即可。
+### 如果 `git clone` 提示目录已经存在
+
+例如：
+
+```text
+fatal: destination path 'FortiorKnowledgeContributionSkills' already exists and is not an empty directory.
+```
+
+**不要直接继续运行旧目录里的 `install.py`。** 先进入已有目录并同步最新 `main`：
+
+```bash
+cd FortiorKnowledgeContributionSkills
+git status
+git remote -v
+git switch main
+git pull --ff-only origin main
+```
+
+如果 `git pull --ff-only` 因本地改动失败，而这些本地改动又不需要保留，最安全的做法是先退出目录，把旧目录改名备份，再重新 clone；不要直接删除未知内容。
+
+当前目录应当确实是本仓库，并且 `git remote -v` 应指向：
+
+```text
+https://github.com/TanRongbin/FortiorKnowledgeContributionSkills.git
+```
 
 ## 3. 安装 Skill
 
@@ -65,6 +91,19 @@ python install.py --target gemini
 python install.py --target copilot
 ```
 
+当前安装器成功执行后会打印类似：
+
+```text
+Installed Fortior skill:
+  - ...\fortior-knowledge-contributor
+Stable runtime: ...\.fortior\runtime\fortior-knowledge-contributor
+Submit runtime: ...\scripts\submit.py
+Local config: ...\.fortior\knowledge-contributor.env
+Hosted Gateway: https://fortior-knowledge-contribution-gateway.onrender.com
+```
+
+**如果 `python install.py ...` 什么都不输出就直接返回命令行，优先怀疑当前目录不是最新版仓库。** 先回到第 2 节执行 `git status`、`git remote -v`、`git pull --ff-only origin main`，再重新安装。
+
 安装器会同时安装一个独立提交 runtime：
 
 ```text
@@ -86,13 +125,45 @@ FORTIOR_CONTRIBUTION_ENDPOINT=https://fortior-knowledge-contribution-gateway.onr
 
 普通贡献者不要填写任何 `FEISHU_*` Secret。
 
-## 4. 重启 AI CLI
+## 4. Windows 安装后立即验证
+
+Windows PowerShell 建议使用真实用户目录，而不是依赖可能被某些 CLI 沙箱改写的 `$HOME`：
+
+```powershell
+$u = [Environment]::GetFolderPath('UserProfile')
+
+$paths = @(
+  "$u\.agents\skills\fortior-knowledge-contributor\SKILL.md",
+  "$u\.claude\skills\fortior-knowledge-contributor\SKILL.md",
+  "$u\.gemini\skills\fortior-knowledge-contributor\SKILL.md",
+  "$u\.fortior\runtime\fortior-knowledge-contributor\SKILL.md"
+)
+
+$paths | ForEach-Object {
+    if (Test-Path $_) { "OK   $_" } else { "MISS $_" }
+}
+```
+
+使用 `--target all` 时，前三个 Skill 路径和公共 runtime 正常应显示 `OK`。
+
+同时确认 Python 认为的用户目录：
+
+```powershell
+python -c "from pathlib import Path; print(Path.home())"
+$env:USERPROFILE
+```
+
+两者通常应指向同一个 Windows 用户目录。如果不是同一个目录，Skill 可能被安装到了另一个用户配置下。
+
+## 5. 重启 AI CLI
 
 安装或更新后，**彻底退出当前 Claude Code / Codex / Gemini / Copilot 进程，再重新启动**。
 
 只新建一个聊天会话可能仍然使用旧 Skill 缓存。
 
-## 5. 贡献工程经验
+如果第 4 节已经确认对应 `SKILL.md` 存在，但 CLI 仍然看不到 Skill，再检查这个 CLI 实际使用的 Skill 目录和版本；不要重复 clone 或反复运行安装器掩盖问题。
+
+## 6. 贡献工程经验
 
 在一个已经通过 AI 完成分析、定位或修复的真实工程会话里直接说：
 
@@ -102,13 +173,13 @@ FORTIOR_CONTRIBUTION_ENDPOINT=https://fortior-knowledge-contribution-gateway.onr
 
 如果当前 CLI 支持显式 Skill 调用，也可以显式调用 `fortior-knowledge-contributor` 后再给出同样指令。
 
-## 6. 贡献程序评审点
+## 7. 贡献程序评审点
 
 ```text
 把刚刚这个问题抽象成一个可复用的程序评审点并贡献。
 ```
 
-## 7. 同时贡献两种知识
+## 8. 同时贡献两种知识
 
 ```text
 把刚才的问题同时总结成工程经验和可复用评审点并分别贡献。
@@ -116,7 +187,7 @@ FORTIOR_CONTRIBUTION_ENDPOINT=https://fortior-knowledge-contribution-gateway.onr
 
 Skill 会优先使用当前对话、Git diff / commit、源码、日志、测试、波形和已有用户确认，不要求重新描述已经在上下文中的信息。
 
-## 8. 提交前会让你确认什么
+## 9. 提交前会让你确认什么
 
 远程提交前，Skill 会要求确认：
 
@@ -132,7 +203,7 @@ Skill 会优先使用当前对话、Git diff / commit、源码、日志、测试
 
 如果 CLI 支持结构化问答，正常情况下这些项目会以单选/多选界面出现。
 
-## 9. 成功判据
+## 10. 成功判据
 
 只有看到真实远程提交结果才算成功，例如：
 
@@ -153,13 +224,14 @@ Validation: PASS
 
 但没有 `Submission: PASS`，说明内容只通过了本地校验，远程提交并未完成。
 
-## 10. 更新 Skill
+## 11. 更新 Skill
 
 以后仓库更新后：
 
 ```bash
 cd FortiorKnowledgeContributionSkills
-git pull --ff-only
+git switch main
+git pull --ff-only origin main
 python install.py --target auto
 ```
 
@@ -169,42 +241,25 @@ python install.py --target auto
 python install.py --target all
 ```
 
-然后彻底重启对应 AI CLI。
-
-## 11. 检查安装位置
-
-常见位置：
-
-```text
-Codex / Copilot:
-~/.agents/skills/fortior-knowledge-contributor
-
-Claude Code:
-~/.claude/skills/fortior-knowledge-contributor
-
-Gemini CLI:
-~/.gemini/skills/fortior-knowledge-contributor
-
-公共 runtime:
-~/.fortior/runtime/fortior-knowledge-contributor
-```
-
-Windows PowerShell 可以检查：
-
-```powershell
-$paths = @(
-  "$HOME\.agents\skills\fortior-knowledge-contributor\SKILL.md",
-  "$HOME\.claude\skills\fortior-knowledge-contributor\SKILL.md",
-  "$HOME\.gemini\skills\fortior-knowledge-contributor\SKILL.md",
-  "$HOME\.fortior\runtime\fortior-knowledge-contributor\SKILL.md"
-)
-
-$paths | ForEach-Object {
-    if (Test-Path $_) { "OK   $_" } else { "MISS $_" }
-}
-```
+然后重新执行第 4 节的安装路径检查，并彻底重启对应 AI CLI。
 
 ## 12. 常见问题
+
+### `git clone` 说目录已经存在
+
+说明本机已经有同名目录。这不是安装成功提示。进入已有仓库后先 `git pull --ff-only origin main`；如果它不是正确仓库或本地状态不可安全快进，先改名备份，再重新 clone。
+
+### `python install.py` 没有任何输出
+
+当前正式安装器成功时一定会打印安装结果。无输出通常意味着你运行了旧版/错误目录里的脚本。检查：
+
+```bash
+git status
+git remote -v
+git log -1 --oneline
+```
+
+然后更新 `main` 再安装。
 
 ### 第一次提交比较慢
 
