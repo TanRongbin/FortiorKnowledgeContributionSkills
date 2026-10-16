@@ -38,3 +38,14 @@ Review metadata such as project/product name, chip model, engineering series, CP
 ## Publication boundary
 
 `visibility` and disclosure booleans are user decisions. AI may recommend safer defaults, but may not silently broaden permission.
+
+## Synthesis-ready capture (additive)
+
+Before previewing a contribution, read `references/synthesis-ready-capture.md`.
+Preserve the existing required questionnaire and transport behavior. Where evidence
+supports it, include the optional `knowledge_extension` object described there.
+Do not invent examples, related rule IDs, counterexamples, proofs or permission.
+Run the bundled `scripts/validate_capture_extension.py <payload.json>` before
+submission when this extension is included. Validation is local and read-only.
+The existing raw JSON transport preserves the extension; no new Feishu columns,
+remote lookup, database approval or automatic rule publication is implied.

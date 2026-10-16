@@ -1,0 +1,21 @@
+name: Capture enrichment offline checks
+on:
+  push:
+    branches: [feature/review-system-evolution-v1]
+  pull_request:
+    paths:
+      - 'skills/fortior-knowledge-contributor/scripts/validate_capture_extension.py'
+      - 'skills/fortior-knowledge-contributor/references/**'
+      - 'tests/test_capture_extension.py'
+      - '.github/workflows/capture-enrichment-check.yml'
+permissions:
+  contents: read
+jobs:
+  enrichment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s tests -p test_capture_extension.py -v
