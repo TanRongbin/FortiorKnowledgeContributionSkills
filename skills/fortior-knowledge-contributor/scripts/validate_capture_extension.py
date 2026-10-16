@@ -21,7 +21,7 @@ def refs(value: object, known: set[str]) -> list[str]:
     return value
 
 
-def validate_extension(payload: dict) -> None:
+def _validate_extension(payload: dict) -> None:
     need(isinstance(payload, dict), "payload must be an object")
     extension = payload.get("knowledge_extension")
     if extension is None:
@@ -62,6 +62,33 @@ def validate_extension(payload: dict) -> None:
     need(isinstance(verification.get("expected_behavior"), str) and isinstance(verification.get("observed_behavior"), str), "verification text missing")
     evidence = refs(verification.get("evidence_ids"), known)
     need(verification["status"] not in {"passed", "failed"} or bool(evidence), "executed verification needs evidence")
+
+
+def validate_extension(payload: dict) -> None:
+    need(isinstance(payload, dict), "payload must be an object")
+    # Legacy payloads are validated by their existing base schema.
+    pending = [(payload.get("knowledge_extension"), 0)]
+    nodes = characters = 0
+    while pending:
+        value, depth = pending.pop()
+        nodes += 1
+        need(depth <= 64 and nodes <= 250_000, "extension exceeds nesting/node limit")
+        if isinstance(value, str):
+            characters += len(value)
+            need(len(value) <= 1_000_000 and characters <= 32_000_000, "extension exceeds text limit")
+        elif isinstance(value, dict):
+            need(all(isinstance(k, str) for k in value), "extension keys must be strings")
+            pending.extend((v, depth + 1) for pair in value.items() for v in pair)
+        elif isinstance(value, list):
+            pending.extend((v, depth + 1) for v in value)
+        else:
+            need(value is None or type(value) in (bool, int, float), "extension contains non-JSON value")
+            if isinstance(value, float):
+                need(value == value and abs(value) != float("inf"), "extension contains non-finite number")
+    try:
+        _validate_extension(payload)
+    except (TypeError, KeyError, AttributeError) as exc:
+        raise ValueError("extension field has invalid type or missing key") from exc
 
 
 def main() -> int:

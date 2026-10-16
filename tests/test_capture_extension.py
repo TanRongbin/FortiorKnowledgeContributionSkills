@@ -41,4 +41,17 @@ class ExtensionTests(unittest.TestCase):
         p=fixture(); p['knowledge_extension']['evidence_facts']*=2
         with self.assertRaises(ValueError): validate_extension(p)
 
+    def test_invalid_enum_types(self):
+        for value in ([], {}, 3, None):
+            p=fixture(); p['knowledge_extension']['relation_intent']=value
+            with self.subTest(value=value), self.assertRaises(ValueError): validate_extension(p)
+
+    def test_extreme_text_rejected(self):
+        p=fixture(); p['knowledge_extension']['mechanism']='x'*1_000_001
+        with self.assertRaises(ValueError): validate_extension(p)
+
+    def test_non_json_nested_value_rejected(self):
+        p=fixture(); p['knowledge_extension']['extra']=float('nan')
+        with self.assertRaises(ValueError): validate_extension(p)
+
 if __name__=='__main__': unittest.main()
