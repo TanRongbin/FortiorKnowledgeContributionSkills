@@ -301,6 +301,9 @@ def review_fields(payload: dict, meta: dict) -> dict:
 
     fields = {
         "问题标题": payload.get("title", ""),
+        # The Hub ingress restores structured capture metadata from this field.
+        # Keep the complete permitted payload; never stringify nested references.
+        "原始JSON": json.dumps(payload, ensure_ascii=False),
         "责任人": contributor.get("username", ""),
         "背景说明": payload.get("summary", ""),
         "异常表现": text_list(payload.get("failure_symptoms", [])),

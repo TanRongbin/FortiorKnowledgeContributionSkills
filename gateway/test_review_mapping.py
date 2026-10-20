@@ -23,6 +23,14 @@ def main() -> None:
         "client_version": "test-version",
     }
     fields = review_fields(payload, meta)
+    enriched = dict(payload, knowledge_extension={"evidence_facts": [{
+        "id": "synthetic-fact", "source_ref": {"locator": "synthetic:case/1"}
+    }]})
+    mapped = review_fields(enriched, meta)
+    restored = json.loads(mapped["原始JSON"])
+    assert restored == enriched
+    assert isinstance(restored["knowledge_extension"]["evidence_facts"][0]["source_ref"], dict)
+    assert json.loads(fields["原始JSON"]) == payload
 
     expected = {
         "问题标题": "外部长度字段参与接收计数前的边界约束",
