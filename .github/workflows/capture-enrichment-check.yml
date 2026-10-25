@@ -4,9 +4,10 @@ on:
     branches: [feature/review-system-evolution-v1]
   pull_request:
     paths:
-      - 'skills/fortior-knowledge-contributor/scripts/validate_capture_extension.py'
-      - 'skills/fortior-knowledge-contributor/references/**'
-      - 'tests/test_capture_extension.py'
+      - 'skills/fortior-knowledge-contributor/**'
+      - 'tests/**'
+      - 'install.py'
+      - 'tools/**'
       - '.github/workflows/capture-enrichment-check.yml'
 permissions:
   contents: read
@@ -19,3 +20,18 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 -m unittest discover -s tests -p test_capture_extension.py -v
+      - name: Preserve exact repository source, not live service state
+        if: always()
+        run: |
+          mkdir -p acceptance-checks
+          git rev-parse HEAD > acceptance-checks/source-commit.txt
+          git archive --format=zip HEAD > acceptance-checks/repository-source.zip
+          sha256sum acceptance-checks/repository-source.zip > acceptance-checks/SHA256SUMS
+          printf '%s\n' 'Offline source/fixture checks only; no real contribution, Feishu write, credentials or service deployment.' > acceptance-checks/SCOPE.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: capture-source-${{ github.run_id }}
+          path: acceptance-checks/
+          retention-days: 14
+          if-no-files-found: error
