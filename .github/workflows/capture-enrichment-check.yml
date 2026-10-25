@@ -20,6 +20,7 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 -m unittest discover -s tests -p test_capture_extension.py -v
+      - run: python3 -m unittest discover -s tests -p 'test_*install*.py' -v
       - name: Preserve exact repository source, not live service state
         if: always()
         run: |
