@@ -24,15 +24,24 @@ def digest(value):
                                      separators=(',', ':')).encode('utf-8')).hexdigest()
 
 
+def is_link(path):
+    """Reject symlinks and Windows junction/reparse points, including on Python 3.10."""
+    path = Path(path)
+    try:
+        return path.is_symlink() or bool(getattr(path.lstat(), 'st_file_attributes', 0) & 0x400)
+    except FileNotFoundError:
+        return False
+
+
 def file_map(root):
     root = Path(root)
-    if root.is_symlink() or not root.is_dir():
+    if is_link(root) or not root.is_dir():
         raise ValueError('package root must be a real directory')
     files = {}
     for directory, names, leaves in os.walk(root, followlinks=False):
         for name in names + leaves:
             p = Path(directory) / name
-            if p.is_symlink():
+            if is_link(p):
                 raise ValueError('package symlink rejected: ' + str(p.relative_to(root)))
         names[:] = sorted(n for n in names if n not in ('__pycache__', '.git'))
         for name in sorted(leaves):
@@ -97,12 +106,12 @@ def verify(root):
 
 
 def install_tree(source, destination, *, replace=False, protected_root=None):
-    if Path(source).is_symlink():
+    if is_link(source):
         raise ValueError('source package symlink is not supported')
     source = Path(source).resolve()
     raw_destination = Path(destination).expanduser().absolute()
     for part in (raw_destination, *raw_destination.parents):
-        if part.is_symlink():
+        if is_link(part):
             raise ValueError('installation through symlink is not supported')
     destination = raw_destination.resolve()
     for protected in (source, Path(protected_root).resolve() if protected_root else source):

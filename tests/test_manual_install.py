@@ -39,7 +39,11 @@ class ManualInstallTests(unittest.TestCase):
         self.seal();self.dest.parent.mkdir(parents=True);lock=self.dest.with_name('.fixture.install-lock');lock.mkdir()
         self.assertRaisesRegex(ValueError,'lock',li.install_tree,self.source,self.dest);lock.rmdir()
         if hasattr(Path,'symlink_to'):
-            link=self.root/'link';link.symlink_to(self.source,target_is_directory=True)
+            link=self.root/'link'
+            try: link.symlink_to(self.source,target_is_directory=True)
+            except OSError as exc:
+                if getattr(exc, 'winerror', None) == 1314: return  # No symlink privilege; junction test still runs.
+                raise
             self.assertRaisesRegex(ValueError,'symlink',li.install_tree,link,self.dest)
     def test_failed_activation_restores_previous_bytes(self):
         self.seal();li.install_tree(self.source,self.dest);old=(self.dest/'SKILL.md').read_bytes()
@@ -55,5 +59,18 @@ class ManualInstallTests(unittest.TestCase):
         (self.source/'references').mkdir();pool={'version':'trial','channel':'development'};(self.source/'references/manifest.json').write_text(json.dumps(pool));(self.source/'references/pool-members.json').write_text('{"members":[]}')
         li.seal(self.source,skill='fixture',source={'commit':'a'*40},pool=pool);d=li.describe(self.source)
         self.assertEqual(d['remote_freshness'],'not_checked');self.assertFalse(d['actual_host_skill_read_verified']);self.assertEqual(d['review_pool'],pool)
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Windows junction contract')
+    def test_windows_junction_source_and_parent_rejected(self):
+        import subprocess
+        self.seal()
+        link=self.root/'junction'
+        subprocess.run(['cmd','/c','mklink','/J',str(link),str(self.source)],check=True,capture_output=True)
+        try:
+            self.assertRaisesRegex(ValueError,'symlink',li.install_tree,link,self.dest)
+            self.assertRaisesRegex(ValueError,'symlink',li.install_tree,self.source,link/'destination')
+            self.assertRaisesRegex(ValueError,'real directory',li.verify,link)
+        finally:
+            link.rmdir()  # Remove junction only; target retained.
 
 if __name__=='__main__':unittest.main()
