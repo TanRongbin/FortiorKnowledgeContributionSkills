@@ -63,5 +63,7 @@ class RetryTests(unittest.TestCase):
   two={**body,'payload':{**self.payload,'title':'Explicit revision'},'client_metadata':{**body['client_metadata'],'request_id':str(uuid.uuid4()),'parent_request_id':one['request_id'],'case_id':one['case_id'],'revision':2}}
   result=client.post('/v1/contributions',json=two);self.assertEqual(result.status_code,200,result.text);self.assertEqual(result.json()['case_id'],one['case_id'])
   two['client_metadata']['request_id']=str(uuid.uuid4());two['client_metadata']['case_id']='forged';self.assertEqual(client.post('/v1/contributions',json=two).status_code,409)
+ def test_legacy_fresh_submission_uuid_is_not_a_persistent_request(self):
+  body=self.body();body['client_metadata'].pop('request_id');self.assertEqual(TestClient(gateway.app).post('/v1/contributions',json=body).status_code,428)
 
 if __name__=='__main__':unittest.main()

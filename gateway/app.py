@@ -271,7 +271,8 @@ async def contribute(request: Request, x_fortior_edit_code: str | None = Header(
     if instance_id:
         enforce_rate(f"instance:{instance_id}")
 
-    request_id=str(client_meta.get("request_id", client_meta.get("submission_id", "")))
+    if not client_meta.get("request_id"):raise HTTPException(428,"Persisted request_id required; upgrade client before retry")
+    request_id=str(client_meta["request_id"])
     try:uuid.UUID(request_id)
     except (ValueError,TypeError):raise HTTPException(400,"A persisted opaque request_id is required")
     content_hash=canonical_hash(payload)

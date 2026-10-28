@@ -28,3 +28,7 @@ lineage is not proof of an authenticated author or an independent experiment.
 The envelope preserves the full permitted payload and structured extension/source
 objects. Projection conflicts, missing rights and unknown legacy identity need
 explicit governance; contributor rights claims do not constitute Owner approval.
+
+Legacy clients that supply only a fresh submission_id are rejected with 428; they
+must upgrade before this gateway is promoted. This avoids claiming retry safety
+for clients that never persisted a logical request. CLI names remain unchanged.
