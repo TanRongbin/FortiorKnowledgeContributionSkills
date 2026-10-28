@@ -7,6 +7,8 @@ import json
 import re
 import sys
 import uuid
+import os
+import time
 from pathlib import Path
 
 from common import compact, feishu_tenant_access_token, http_json, load_config, require
@@ -98,17 +100,44 @@ def canonical_hash(payload: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def update_request_state(path, transform):
+    path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
+    lock=path.with_name(path.name+".lock");deadline=time.monotonic()+5
+    while True:
+        try:lock.mkdir();break
+        except FileExistsError:
+            if time.monotonic()>deadline:raise RuntimeError("Request state lock busy; inspect, do not invent a new identity")
+            time.sleep(0.02)
+    temp=path.with_name(path.name+".tmp-"+uuid.uuid4().hex)
+    try:
+        old=json.loads(path.read_text(encoding="utf8")) if path.exists() else None
+        new=transform(old)
+        with temp.open("w",encoding="utf8") as handle:
+            json.dump(new,handle,ensure_ascii=False);handle.flush();os.fsync(handle.fileno())
+        os.replace(temp,path)
+        return old,new
+    finally:
+        temp.unlink(missing_ok=True);lock.rmdir()
+
+
 def metadata(payload: dict, cfg: dict[str, str]) -> dict:
-    return {
-        "submission_id": str(uuid.uuid4()),
-        "content_hash": canonical_hash(payload),
-        "client_version": cfg.get("FORTIOR_CLIENT_VERSION", CLIENT_VERSION),
-        "client_instance_id": cfg.get("FORTIOR_CLIENT_INSTANCE_ID", ""),
-        "identity_status": "未验证",
-        "identity_provider": "",
-        "verified_username": "",
-        "verified_user_id": "",
-    }
+    digest=canonical_hash(payload)
+    endpoint=cfg.get("FORTIOR_CONTRIBUTION_ENDPOINT","local")
+    path=Path(cfg.get("FORTIOR_REQUEST_STATE_FILE",str(Path.home()/".fortior"/"requests"/(canonical_hash({"endpoint":endpoint,"payload":digest})+".json"))))
+    def create(old):
+        if old is not None:
+            if old["content_hash"]!=digest:raise RuntimeError("Request content changed; explicitly start a new revision")
+            return old
+        key=str(uuid.uuid4())
+        return {"request_id":key,"case_id":cfg.get("FORTIOR_REQUEST_CASE_ID",key),"revision":int(cfg.get("FORTIOR_REQUEST_REVISION","1")),"parent_request_id":cfg.get("FORTIOR_REQUEST_PARENT",""),"content_hash":digest,"attempted":False}
+    _,state=update_request_state(path,create)
+    return {**state,"state_path":str(path),"submission_id":state["request_id"],"client_version":cfg.get("FORTIOR_CLIENT_VERSION",CLIENT_VERSION),"client_instance_id":cfg.get("FORTIOR_CLIENT_INSTANCE_ID",""),"identity_status":"未验证"}
+
+
+def original_document(payload, meta):
+    if not meta.get("request_id"):return payload
+    return {"payload":payload,"transport":{k:v for k,v in meta.items() if k in
+      ("request_id","case_id","revision","content_hash","scope","submission_id","client_instance_id","client_version","parent_request_id")}}
 
 
 def text_list(value) -> str:
@@ -157,7 +186,7 @@ def common_feishu_fields(payload: dict, meta: dict) -> dict:
         "风控状态": meta.get("risk_status", "客户端预检"),
         "风控分": meta.get("risk_score", 0),
         "治理状态": "待治理",
-        "原始JSON": json.dumps(payload, ensure_ascii=False),
+        "原始JSON": json.dumps(original_document(payload, meta), ensure_ascii=False),
     }
 
 
@@ -303,7 +332,7 @@ def review_fields(payload: dict, meta: dict) -> dict:
         "问题标题": payload.get("title", ""),
         # The Hub ingress restores structured capture metadata from this field.
         # Keep the complete permitted payload; never stringify nested references.
-        "原始JSON": json.dumps(payload, ensure_ascii=False),
+        "原始JSON": json.dumps(original_document(payload, meta), ensure_ascii=False),
         "责任人": contributor.get("username", ""),
         "背景说明": payload.get("summary", ""),
         "异常表现": text_list(payload.get("failure_symptoms", [])),
@@ -366,24 +395,40 @@ def submit_gateway(cfg: dict[str, str], kind: str, payload: dict, meta: dict):
     headers = {"X-Fortior-Client-Version": meta.get("client_version", CLIENT_VERSION)}
     if cfg.get("FORTIOR_CONTRIBUTION_EDIT_CODE"):
         headers["X-Fortior-Edit-Code"] = cfg["FORTIOR_CONTRIBUTION_EDIT_CODE"]
-    return http_json(
-        "POST",
-        cfg["FORTIOR_CONTRIBUTION_ENDPOINT"].rstrip("/") + "/v1/contributions",
-        {"type": kind, "payload": payload, "client_metadata": meta},
-        headers,
-    )
+    state_path=Path(meta["state_path"])
+    previous,state=update_request_state(state_path,lambda old:{**old,"attempted":True})
+    already_attempted=previous.get("attempted",False)
+    sent={k:v for k,v in meta.items() if k!="state_path"};sent["reconcile_only"]=already_attempted
+    try:
+        result = http_json(
+            "POST",
+            cfg["FORTIOR_CONTRIBUTION_ENDPOINT"].rstrip("/") + "/v1/contributions",
+            {"type": kind, "payload": payload, "client_metadata": sent},
+            headers,
+        )
+    except Exception as exc:
+        update_request_state(state_path,lambda old:{**old,"outcome":"outcome_unknown"})
+        raise RuntimeError("outcome_unknown: saved request identity; retry reconciles only") from exc
+    if result.get("ok") and (result.get("request_id")!=meta["request_id"] or result.get("content_hash")!=meta["content_hash"] or not result.get("record_id")):
+        raise RuntimeError("outcome_unknown: gateway receipt identity does not match saved request")
+    state["receipt"]=result;state["outcome"]="succeeded" if result.get("ok") else "outcome_unknown"
+    update_request_state(state_path,lambda old:old if old.get("outcome")=="succeeded" else {**old,"receipt":result,"outcome":state["outcome"]})
+    return result
 
 
 def submit_feishu_direct(cfg: dict[str, str], kind: str, payload: dict, meta: dict):
     require(cfg, "FEISHU_APP_TOKEN")
     table_key = "FEISHU_EXPERIENCE_TABLE_ID" if kind == "experience" else "FEISHU_REVIEW_POINT_TABLE_ID"
     require(cfg, table_key)
+    previous,_=update_request_state(meta["state_path"],lambda old:{**old,"attempted":True})
+    if previous.get("attempted"):raise RuntimeError("outcome_unknown: direct Feishu mode needs explicit Owner reconciliation before any retry")
     direct_meta = dict(meta)
     direct_meta["identity_status"] = "Owner直写"
     token = feishu_tenant_access_token(cfg)
     fields = experience_fields(payload, direct_meta) if kind == "experience" else review_fields(payload, direct_meta)
     url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{cfg['FEISHU_APP_TOKEN']}/tables/{cfg[table_key]}/records"
-    result = http_json("POST", url, {"fields": fields}, {"Authorization": f"Bearer {token}"})
+    try:result = http_json("POST", url, {"fields": fields}, {"Authorization": f"Bearer {token}"})
+    except Exception as exc:raise RuntimeError("outcome_unknown: reconcile direct Feishu record; no automatic create retry") from exc
     if result.get("code") != 0:
         raise RuntimeError(f"Feishu create record failed: {result}")
     return result
@@ -394,24 +439,27 @@ def main() -> None:
     parser.add_argument("--type", choices=["experience", "review_point"], required=True)
     parser.add_argument("--file", required=True)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--new-revision", action="store_true", help="Explicitly create a new request revision; preserve previous state")
     args = parser.parse_args()
 
     payload = json.loads(Path(args.file).read_text(encoding="utf-8-sig"))
     cfg = load_config()
     warnings = validate(payload, args.type)
-    meta = metadata(payload, cfg)
-    print(f"Validation: PASS | content_hash={meta['content_hash']}")
-    for warning in warnings:
-        print(f"Warning: {warning}")
-
+    print(f"Validation: PASS | content_hash={canonical_hash(payload)}")
+    for warning in warnings:print(f"Warning: {warning}")
     if args.dry_run:
-        print("Submission: DRY RUN")
-        return
-
-    mode = cfg.get("FORTIOR_SUBMIT_MODE", "local_only")
-    if mode == "local_only":
-        print("Submission: local_only; no remote write performed")
-        return
+        print("Submission: DRY RUN");return
+    mode=cfg.get("FORTIOR_SUBMIT_MODE","local_only")
+    if mode=="local_only":
+        print("Submission: local_only; no remote write performed");return
+    cfg["FORTIOR_REQUEST_STATE_FILE"]=str(Path(args.file).resolve())+".submission-request.json"
+    state_path=Path(cfg["FORTIOR_REQUEST_STATE_FILE"])
+    if args.new_revision and state_path.exists():
+        previous=json.loads(state_path.read_text(encoding="utf8"));backup=state_path.with_name(state_path.name+".previous-"+previous["request_id"])
+        if backup.exists():raise RuntimeError("Previous request backup exists")
+        state_path.rename(backup)
+        cfg["FORTIOR_REQUEST_PARENT"]=previous["request_id"];cfg["FORTIOR_REQUEST_CASE_ID"]=previous["case_id"];cfg["FORTIOR_REQUEST_REVISION"]=str(previous["revision"]+1)
+    meta = metadata(payload, cfg)
     if mode == "gateway":
         result = submit_gateway(cfg, args.type, payload, meta)
     elif mode == "feishu_direct":
@@ -419,7 +467,7 @@ def main() -> None:
     else:
         raise RuntimeError(f"Unknown FORTIOR_SUBMIT_MODE: {mode}")
 
-    print("Submission: PASS")
+    print("Submission: PASS" if result.get("ok", result.get("code")==0) else "Submission: outcome_unknown; reconcile before retry")
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

@@ -35,13 +35,10 @@ MOCK_LOG = Path(
 )
 
 RATE_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
-SEEN_HASHES: dict[str, float] = {}
-DEDUPE_TTL = 24 * 3600
 FEISHU_WRITE_LOCKS = {
     "experience": threading.Lock(),
     "review_point": threading.Lock(),
 }
-FEISHU_RETRY_CODES = {1254290, 1254291}
 
 
 def cfg() -> dict[str, str]:
@@ -74,13 +71,6 @@ def enforce_rate(key: str) -> None:
     if len(bucket) >= RATE_PER_HOUR:
         raise HTTPException(429, "Contribution rate limit exceeded")
     bucket.append(now)
-
-
-def cleanup_seen() -> None:
-    now = time.time()
-    for key, ts in list(SEEN_HASHES.items()):
-        if ts < now - DEDUPE_TTL:
-            del SEEN_HASHES[key]
 
 
 def validate_payload(kind: str, payload: dict) -> None:
@@ -137,35 +127,13 @@ def write_feishu(kind: str, payload: dict, meta: dict) -> dict:
     fields = experience_fields(payload, meta) if kind == "experience" else review_fields(payload, meta)
     url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{conf['FEISHU_APP_TOKEN']}/tables/{conf[table_key]}/records"
 
-    # One lock per target table prevents simultaneous writes from this process. Feishu
-    # documents write conflicts for concurrent writes to the same Bitable table.
-    with FEISHU_WRITE_LOCKS[kind]:
-        last_error: Exception | None = None
-        for attempt in range(4):
-            if attempt:
-                time.sleep(0.5 * (2 ** (attempt - 1)))
-            try:
-                result = http_json(
-                    "POST",
-                    url,
-                    {"fields": fields},
-                    {"Authorization": f"Bearer {token}"},
-                    timeout=30,
-                )
-            except Exception as exc:
-                last_error = exc
-                if attempt < 3:
-                    continue
-                raise HTTPException(502, f"Feishu request failed after retries: {exc}") from exc
-
-            code = result.get("code")
-            if code == 0:
-                return result
-            if code in FEISHU_RETRY_CODES and attempt < 3:
-                continue
-            raise HTTPException(502, f"Feishu create record failed: code={code} msg={result.get('msg', 'unknown')}")
-
-        raise HTTPException(502, f"Feishu request failed after retries: {last_error}")
+    # Never retry an uncertain non-idempotent create. Reconciliation is separate.
+    try:
+        result=http_json("POST",url,{"fields":fields},{"Authorization":f"Bearer {token}"},timeout=30)
+    except Exception as exc:
+        raise HTTPException(202,{"status":"outcome_unknown","request_id":meta["request_id"],"action":"reconcile_only"}) from exc
+    if result.get("code")!=0:raise HTTPException(502,"Feishu rejected create; do not blind retry")
+    return result
 
 
 def write_mock(kind: str, payload: dict, meta: dict) -> dict:
@@ -243,6 +211,36 @@ def ready():
     return {"ok": True, "sink": SINK, "stage": "ready", "version": app.version}
 
 
+def lookup_receipts(kind,scope,request_id):
+    """Feishu is the durable production backend; mock JSONL is TEST ONLY."""
+    if SINK=="mock":
+        rows=[json.loads(line) for line in MOCK_LOG.read_text(encoding="utf8").splitlines()] if MOCK_LOG.exists() else []
+        records=[{"record_id":r["record_id"],"transport":r["metadata"],"payload":r["payload"]} for r in rows]
+    elif SINK=="feishu":
+        conf=cfg();token=feishu_tenant_access_token(conf);table=conf["FEISHU_EXPERIENCE_TABLE_ID" if kind=="experience" else "FEISHU_REVIEW_POINT_TABLE_ID"]
+        url=f"https://open.feishu.cn/open-apis/bitable/v1/apps/{conf['FEISHU_APP_TOKEN']}/tables/{table}/records/search?page_size=500"
+        result=http_json("POST",url,{"filter":{"conjunction":"and","conditions":[{"field_name":"原始JSON","operator":"contains","value":[request_id]}]}},{"Authorization":f"Bearer {token}"})
+        if result.get("code")!=0:raise HTTPException(503,"Durable reconciliation unavailable; no create allowed")
+        data=result.get("data") or {}
+        if data.get("has_more"):raise HTTPException(503,"Reconciliation exceeds bounded page; manual reconciliation required")
+        records=[]
+        for row in data.get("items",[]):
+            raw=(row.get("fields") or {}).get("原始JSON")
+            if isinstance(raw,list):raw=''.join(x.get('text','') for x in raw if isinstance(x,dict))
+            try:doc=json.loads(raw)
+            except (ValueError,TypeError):raise HTTPException(503,"Ambiguous durable original; reconcile manually, no create")
+            if not isinstance(doc,dict) or not isinstance(doc.get("transport",{}),dict):raise HTTPException(503,"Malformed durable envelope")
+            records.append({"record_id":row["record_id"],"transport":doc.get("transport",{}),"payload":doc.get("payload")})
+    else:raise HTTPException(503,"Durable backend unavailable")
+    found=[]
+    for row in records:
+        t=row['transport']
+        if t.get('request_id')==request_id and t.get('scope')==scope:
+            if not t.get('submission_id') or canonical_hash(row['payload'])!=t.get('content_hash'):raise HTTPException(503,'Durable receipt content inconsistent; manual reconciliation required')
+            found.append({"ok":True,"sink":SINK,"request_id":request_id,"submission_id":t['submission_id'],"scope":scope,"record_id":row['record_id'],"content_hash":t['content_hash'],"case_id":t.get("case_id",request_id),"revision":t.get("revision",1)})
+    return found
+
+
 @app.post("/v1/contributions")
 async def contribute(request: Request, x_fortior_edit_code: str | None = Header(default=None)):
     enforce_mode(x_fortior_edit_code)
@@ -251,13 +249,16 @@ async def contribute(request: Request, x_fortior_edit_code: str | None = Header(
     if len(raw) > MAX_BYTES:
         raise HTTPException(413, "Payload too large")
     try:
-        body = json.loads(raw)
-    except json.JSONDecodeError:
+        def invalid_constant(value):raise ValueError("Invalid JSON numeric constant")
+        body = json.loads(raw,parse_constant=invalid_constant)
+    except (ValueError,UnicodeDecodeError,RecursionError):
         raise HTTPException(400, "Invalid JSON")
 
+    if not isinstance(body,dict):raise HTTPException(400,"JSON object required")
     kind = body.get("type")
     payload = body.get("payload")
     client_meta = body.get("client_metadata") or {}
+    if not isinstance(client_meta,dict):raise HTTPException(400,"client_metadata must be an object")
     if not isinstance(payload, dict):
         raise HTTPException(400, "payload must be an object")
     validate_payload(kind, payload)
@@ -270,32 +271,35 @@ async def contribute(request: Request, x_fortior_edit_code: str | None = Header(
     if instance_id:
         enforce_rate(f"instance:{instance_id}")
 
-    cleanup_seen()
-    content_hash = canonical_hash(payload)
-    if content_hash in SEEN_HASHES:
-        return {"ok": True, "duplicate": True, "content_hash": content_hash}
-
-    meta = {
-        "submission_id": str(uuid.uuid4()),
-        "content_hash": content_hash,
-        "client_version": str(client_meta.get("client_version", "unknown")),
-        "client_instance_id": instance_id,
-        "identity_status": "未验证",
-        "identity_provider": "",
-        "verified_username": "",
-        "verified_user_id": "",
-        "risk_status": "客户端预检",
-        "risk_score": 0,
-    }
-
-    result = write_sink(kind, payload, meta)
-    SEEN_HASHES[content_hash] = time.time()
-    record = ((result.get("data") or {}).get("record") or {})
-    return {
-        "ok": True,
-        "duplicate": False,
-        "sink": SINK,
-        "submission_id": meta["submission_id"],
-        "content_hash": content_hash,
-        "record_id": record.get("record_id"),
-    }
+    request_id=str(client_meta.get("request_id", client_meta.get("submission_id", "")))
+    try:uuid.UUID(request_id)
+    except (ValueError,TypeError):raise HTTPException(400,"A persisted opaque request_id is required")
+    content_hash=canonical_hash(payload)
+    # Server-controlled sink scope; a username/instance supplied by a client is NOT authentication.
+    conf=cfg() if SINK=="feishu" else {}
+    table=conf.get("FEISHU_EXPERIENCE_TABLE_ID" if kind=="experience" else "FEISHU_REVIEW_POINT_TABLE_ID",str(MOCK_LOG))
+    scope=canonical_hash({"mode":MODE,"auth_domain":hashlib.sha256(EDIT_CODE.encode()).hexdigest() if MODE=="edit_code" else "open-unverified","table":table,"app":conf.get("FEISHU_APP_TOKEN","mock"),"kind":kind})
+    with FEISHU_WRITE_LOCKS[kind]:
+        previous=lookup_receipts(kind,scope,request_id)
+        for receipt in previous:
+            if receipt["content_hash"]!=content_hash:raise HTTPException(409,"Same scope/request has different content")
+        if previous:return {**previous[0],"duplicate":True}
+        if client_meta.get("reconcile_only"):
+            return JSONResponse(status_code=202,content={"ok":False,"status":"outcome_unknown","request_id":request_id,"reconciliation":"no durable record visible; no create attempted"})
+        case_id=request_id;revision=1
+        if client_meta.get("parent_request_id"):
+            parents=lookup_receipts(kind,scope,client_meta['parent_request_id'])
+            if not parents:raise HTTPException(409,"Previous revision not reconciled")
+            case_id=parents[0]['case_id'];revision=parents[0]['revision']+1
+            if client_meta.get('case_id')!=case_id or client_meta.get('revision')!=revision:raise HTTPException(409,"Revision lineage mismatch")
+        meta={"request_id":request_id,"case_id":case_id,"revision":revision,"parent_request_id":client_meta.get("parent_request_id",""),"scope":scope,"submission_id":request_id,"content_hash":content_hash,"client_instance_id":instance_id,"client_version":str(client_meta.get("client_version","unknown")),"identity_status":"未验证"}
+        try:result=write_sink(kind,payload,meta)
+        except HTTPException as exc:
+            if exc.status_code!=202:raise
+            try:reconciled=lookup_receipts(kind,scope,request_id)
+            except Exception:reconciled=[]
+            if reconciled:return {**reconciled[0],"duplicate":True}
+            return JSONResponse(status_code=202,content={"ok":False,"status":"outcome_unknown","request_id":request_id,"action":"reconcile_only"})
+        record=((result.get("data") or {}).get("record") or {})
+        if not record.get("record_id"):raise HTTPException(502,"Missing durable record receipt")
+        return {"ok":True,"duplicate":False,"sink":SINK,"submission_id":request_id,"request_id":request_id,"scope":scope,"content_hash":content_hash,"record_id":record["record_id"],"case_id":case_id,"revision":revision}
