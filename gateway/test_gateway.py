@@ -38,6 +38,7 @@ def main() -> None:
             "payload": payload,
             "client_metadata": {
                 "client_version": "test",
+                "request_id": "db9706b9-b7b9-41ac-bcdc-682c5d73dd96",
                 "client_instance_id": "integration-test-instance",
             },
         }

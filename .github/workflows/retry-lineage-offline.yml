@@ -1,0 +1,21 @@
+name: Retry lineage offline contracts
+on:
+  push:
+    branches: [fix/submission-retry-lineage-20261027]
+  pull_request:
+    paths: ['gateway/**', 'skills/fortior-knowledge-contributor/scripts/submit.py', 'tests/test_retry_lineage.py', '.github/workflows/retry-lineage-offline.yml']
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r gateway/requirements.txt
+      - run: python -B -m unittest discover -s tests -p test_retry_lineage.py -v
+      - run: python -B gateway/test_gateway.py
