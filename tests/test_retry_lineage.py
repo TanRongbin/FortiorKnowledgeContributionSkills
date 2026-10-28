@@ -63,6 +63,16 @@ class RetryTests(unittest.TestCase):
   two={**body,'payload':{**self.payload,'title':'Explicit revision'},'client_metadata':{**body['client_metadata'],'request_id':str(uuid.uuid4()),'parent_request_id':one['request_id'],'case_id':one['case_id'],'revision':2}}
   result=client.post('/v1/contributions',json=two);self.assertEqual(result.status_code,200,result.text);self.assertEqual(result.json()['case_id'],one['case_id'])
   two['client_metadata']['request_id']=str(uuid.uuid4());two['client_metadata']['case_id']='forged';self.assertEqual(client.post('/v1/contributions',json=two).status_code,409)
+ def test_exact_request_bytes_and_outer_fields_are_preserved(self):
+  import hashlib
+  body=self.body();body['outer_extension']={'unknown':'保留'};body['client_metadata']['untrusted_extra']='client claim'
+  raw=json.dumps(body,ensure_ascii=False,indent=2).encode('utf8');rows=[]
+  def sink(kind,payload,meta):
+   rows.append(submit.original_document(payload,meta));return {'data':{'record':{'record_id':'synthetic-original'}}}
+  with patch.object(gateway,'write_sink',sink):
+   response=TestClient(gateway.app).post('/v1/contributions',content=raw,headers={'Content-Type':'application/json'})
+  self.assertEqual(response.status_code,200,response.text);self.assertEqual(rows[0]['original_request_json'],raw.decode('utf8'));self.assertEqual(rows[0]['transport']['request_bytes_sha256'],hashlib.sha256(raw).hexdigest())
+  self.assertNotIn('untrusted_extra',rows[0]['transport']);self.assertEqual(json.loads(rows[0]['original_request_json'])['outer_extension'],body['outer_extension'])
  def test_legacy_fresh_submission_uuid_is_not_a_persistent_request(self):
   body=self.body();body['client_metadata'].pop('request_id');self.assertEqual(TestClient(gateway.app).post('/v1/contributions',json=body).status_code,428)
 

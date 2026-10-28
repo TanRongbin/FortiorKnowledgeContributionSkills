@@ -230,7 +230,12 @@ def lookup_receipts(kind,scope,request_id):
             try:doc=json.loads(raw)
             except (ValueError,TypeError):raise HTTPException(503,"Ambiguous durable original; reconcile manually, no create")
             if not isinstance(doc,dict) or not isinstance(doc.get("transport",{}),dict):raise HTTPException(503,"Malformed durable envelope")
-            records.append({"record_id":row["record_id"],"transport":doc.get("transport",{}),"payload":doc.get("payload")})
+            try:
+                original=json.loads(doc["original_request_json"]) if "original_request_json" in doc else doc
+                if not isinstance(original,dict):raise ValueError("request must be an object")
+                if "original_request_json" in doc and hashlib.sha256(doc["original_request_json"].encode("utf8")).hexdigest()!=doc["transport"].get("request_bytes_sha256"):raise ValueError("request bytes mismatch")
+            except (ValueError,TypeError,AttributeError):raise HTTPException(503,"Malformed durable request; no create allowed")
+            records.append({"record_id":row["record_id"],"transport":doc.get("transport",{}),"payload":original.get("payload")})
     else:raise HTTPException(503,"Durable backend unavailable")
     found=[]
     for row in records:
@@ -293,7 +298,7 @@ async def contribute(request: Request, x_fortior_edit_code: str | None = Header(
             if not parents:raise HTTPException(409,"Previous revision not reconciled")
             case_id=parents[0]['case_id'];revision=parents[0]['revision']+1
             if client_meta.get('case_id')!=case_id or client_meta.get('revision')!=revision:raise HTTPException(409,"Revision lineage mismatch")
-        meta={"request_id":request_id,"case_id":case_id,"revision":revision,"parent_request_id":client_meta.get("parent_request_id",""),"scope":scope,"submission_id":request_id,"content_hash":content_hash,"client_instance_id":instance_id,"client_version":str(client_meta.get("client_version","unknown")),"identity_status":"未验证"}
+        meta={"request_id":request_id,"case_id":case_id,"revision":revision,"parent_request_id":client_meta.get("parent_request_id",""),"scope":scope,"submission_id":request_id,"content_hash":content_hash,"client_instance_id":instance_id,"client_version":str(client_meta.get("client_version","unknown")),"identity_status":"未验证","original_request_json":raw.decode("utf8"),"request_bytes_sha256":hashlib.sha256(raw).hexdigest()}
         try:result=write_sink(kind,payload,meta)
         except HTTPException as exc:
             if exc.status_code!=202:raise

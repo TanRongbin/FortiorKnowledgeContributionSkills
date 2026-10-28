@@ -136,8 +136,11 @@ def metadata(payload: dict, cfg: dict[str, str]) -> dict:
 
 def original_document(payload, meta):
     if not meta.get("request_id"):return payload
-    return {"payload":payload,"transport":{k:v for k,v in meta.items() if k in
-      ("request_id","case_id","revision","content_hash","scope","submission_id","client_instance_id","client_version","parent_request_id")}}
+    transport={k:v for k,v in meta.items() if k in
+      ("request_id","case_id","revision","content_hash","scope","submission_id","client_instance_id","client_version","parent_request_id","identity_status","request_bytes_sha256")}
+    if meta.get("original_request_json") is not None:
+        return {"original_request_json":meta["original_request_json"],"transport":transport}
+    return {"payload":payload,"transport":transport}
 
 
 def text_list(value) -> str:
